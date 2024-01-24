@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 # set seed to ensure exact reproducibility
 def seed_everything(seed=42):
     random.seed(seed)

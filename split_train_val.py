@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from utils import seed_everything
 
+
 seed_everything(42)
 
 trainval = torch.load("DATA/trainval_data_processed_full")

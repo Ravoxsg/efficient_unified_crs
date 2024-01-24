@@ -1,3 +1,5 @@
+
+
 def distinct_metrics(outs):
     # outputs is a list which contains several sentences, each sentence contains several words
     unigram_count = 0

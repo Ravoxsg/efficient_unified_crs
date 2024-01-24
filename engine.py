@@ -5,11 +5,11 @@ import time
 import copy
 import gc
 import re
-# import moxing as mox
 from sklearn.metrics import recall_score, precision_score, f1_score
 from rouge_score import rouge_scorer
 from evaluation import distinct_metrics
 from analysis import further_analysis
+
 
 # overall training loop, on the entire dataset
 def training_loop(train_dataloader, test_dataloader, tokenizer, model, optimizer, scheduler, criterions, logger, accelerator, args):
@@ -269,7 +269,6 @@ def train_one_iteration(batch, tokenizer, model, criterions, accelerator, args):
 
     return np.mean(ppl_history), np.mean(all_loss_ppl), np.mean(all_loss_recall), np.mean(all_loss_rerank), times
 
-
 # validation on the entire dataset
 def validate(ep, dataloader, tokenizer, model, criterions, logger, accelerator, args):
     logger.info("\n")
@@ -459,3 +458,235 @@ def validate_one_iteration(batch, tokenizer, model, criterions, accelerator, arg
     embeds_no_rec = [embeds[x] for x in no_rec_idx]
     embeds_has_rec = [embeds[x] for x in has_rec_idx]
 
+    n_points = len(batch["targets"])
+    n_rec = len(has_rec_idx)
+
+    # language only
+    if len(no_rec_idx) > 0:
+        language_targets = batch["context_with_utterances"][no_rec_idx][:, 1:].contiguous()
+        language_targets[language_targets == len(tokenizer)] = 0
+        language_logits = accelerator.unwrap_model(model).forward_pure_language_turn(embeds_no_rec)
+
+        language_targets_mask = torch.zeros_like(language_targets).float()
+        for i in range(batch["context_with_utterances"][no_rec_idx].shape[0]):
+            context_length = batch["context_lengths"][no_rec_idx[i]]
+            utterance_length = batch["utterance_lengths"][no_rec_idx[i]]
+            language_targets_mask[i, context_length:(context_length + utterance_length - 1)] = 1
+
+        loss_ppl_batch = criterion_language(language_logits, language_targets, language_targets_mask, label_smoothing=-1, reduce="sentence")
+        loss_ppl = loss_ppl_batch.mean()
+        ppl_losses.append(loss_ppl.item())
+        perplexity = np.exp(loss_ppl.item())
+        ppls.append(perplexity)
+
+        del loss_ppl_batch
+
+    # when there is a recommendation to make
+    if len(has_rec_idx) > 0:
+        # recall
+        previous_ids = None
+        if args.previous_recommended_ids_negative:
+            previous_ids = [batch["previous_recommended_ids"][x] for x in has_rec_idx]
+        recall_logits, recall_true_index, language_logits, language_targets, _ = accelerator.unwrap_model(
+            model).forward_recall(
+            batch["indices"][has_rec_idx],
+            batch["context_with_utterances"][has_rec_idx],
+            embeds_has_rec,
+            batch["context_lengths"][has_rec_idx],
+            batch["targets"][has_rec_idx],
+            args.num_samples_recall_train,
+            previous_recommended_ids=previous_ids,
+        )
+
+        # recall items loss
+        recall_targets = torch.LongTensor(recall_true_index).to(accelerator.device)
+        loss_recall = criterion_recall(recall_logits, recall_targets)
+        recall_losses.append(loss_recall.item())
+        del loss_recall, recall_targets
+
+        # language loss in recall turn, REC_TOKEN, Language on conditional generation
+        language_targets_mask = torch.zeros_like(language_targets).float()
+        for i in range(batch["context_with_utterances"][has_rec_idx].shape[0]):
+            context_length = batch["context_lengths"][has_rec_idx[i]]
+            utterance_length = batch["utterance_lengths"][has_rec_idx[i]]
+            language_targets_mask[i, (context_length - 1):(context_length + utterance_length)] = 1
+        language_targets[language_targets == len(tokenizer)] = 0
+        loss_ppl_batch = criterion_language(language_logits, language_targets, language_targets_mask, label_smoothing=-1, reduce="sentence")
+        loss_ppl = loss_ppl_batch.mean()
+        ppl_losses.append(loss_ppl.item())
+        perplexity = np.exp(loss_ppl.item())
+        ppls.append(perplexity)
+
+        del loss_ppl, language_logits, language_targets
+
+        recalled_ids = accelerator.unwrap_model(model).validation_perform_recall(
+            batch["contexts"][has_rec_idx],
+            batch["context_lengths"][has_rec_idx],
+            args.validation_recall_size
+        )
+
+        for i in range(len(recalled_ids)):
+            recommended_id = batch["targets"][has_rec_idx[i]]
+            if recommended_id in recalled_ids[i]:
+                gt_ranks.append(recalled_ids[i].index(recommended_id))
+            else:
+                gt_ranks.append(len(recalled_ids) + 1)
+            if recommended_id in args.cold_start_ids:
+                cold_start_tags.append(1)
+            else:
+                cold_start_tags.append(0)
+            recall_top100.append(int(recommended_id in recalled_ids[i][:100]))
+            recall_top300.append(int(recommended_id in recalled_ids[i][:300]))
+            recall_top500.append(int(recommended_id in recalled_ids[i][:500]))
+            turn_nums.append(batch["turn_nums"][has_rec_idx[i]])
+
+        # re-ranking
+        rerank_logits = accelerator.unwrap_model(model).validation_perform_rerank(
+            batch["contexts"][has_rec_idx],
+            batch["context_lengths"][has_rec_idx],
+            recalled_ids
+        )
+        n_recall_success_batch = 0
+
+        # re-ranking loss
+        loss_rerank = 0
+        for i in range(rerank_logits.shape[0]):
+            recommended_id = batch["targets"][has_rec_idx[i]]
+            reranks = np.argsort(rerank_logits[i].cpu().detach().numpy())[::-1]
+            reranked_ids = [recalled_ids[i][x] for x in reranks]
+            total_rerank_top1[has_rec_idx[i]] = int(recommended_id in reranked_ids[:1])
+            rerank_top1.append(int(recommended_id in reranked_ids[:1]))
+            rerank_top10.append(int(recommended_id in reranked_ids[:10]))
+            rerank_top50.append(int(recommended_id in reranked_ids[:50]))
+
+            # counts of movies
+            gt_ids.append(recommended_id)
+            predicted_id = recalled_ids[i][reranks[0]]
+            total_predicted_ids[has_rec_idx[i]] = predicted_id
+
+            if recommended_id not in recalled_ids[i]:
+                continue
+            n_recall_success += 1
+            n_recall_success_batch += 1
+            rerank_true_index = recalled_ids[i].index(recommended_id)
+            rerank_targets = torch.LongTensor([rerank_true_index]).to(accelerator.device)
+            loss_rerank_i = criterion_rerank(rerank_logits[i].unsqueeze(0), rerank_targets)
+            loss_rerank += loss_rerank_i.item()
+
+            del rerank_targets
+        loss_rerank /= max(1, n_recall_success_batch)
+        if loss_rerank > 0:
+            rerank_losses.append(loss_rerank)
+
+        del loss_rerank, rerank_logits
+
+    metadata = (cold_start_tags, turn_nums, n_points, n_rec)
+    response = (ppl_losses, ppls)
+    recall = (recall_losses, n_recall_success, recall_top100, recall_top300, recall_top500)
+    rerank = (rerank_losses, total_rerank_top1, rerank_top1, rerank_top10, rerank_top50)
+    recommendation = (gt_ids, gt_ranks, total_predicted_ids)
+
+    return metadata, response, recall, rerank, recommendation
+
+# validate on just 1 batch I->I response generation part
+def validate_language_metrics_batch_embeds(tokenizer, batch, model, accelerator, preds, args):
+    model_to_use = accelerator.unwrap_model(model).language_model
+    REC_wte = accelerator.unwrap_model(model).get_rec_token_wtes()
+    REC_END_wte = accelerator.unwrap_model(model).get_rec_end_token_wtes()
+    suffix_ids = torch.tensor([32, 25]).to(accelerator.device)
+    suffix_embeds = model_to_use.transformer.wte(suffix_ids)
+
+    not_repeated_idx = [i for i in range(len(batch["repeated"])) if batch["repeated"][i] == 0]
+
+    sources = []
+    gt_rec, raw_gt_sens, gt_sens = [], [], []
+    pred_rec, gen_sens, tok_gen_sens = [], [], []
+    if len(not_repeated_idx) > 0:
+        for i in range(batch["contexts_padded_left"][not_repeated_idx].shape[0]):
+            source = tokenizer.decode(batch["raw_contexts"][not_repeated_idx[i]], skip_special_tokens=True)
+            sources.append(source)
+        embeds_i = []
+        for j in range(batch["contexts_padded_left"][not_repeated_idx].shape[1]):
+            if batch["contexts_padded_left"][not_repeated_idx[i,j]].item() == tokenizer.pad_token_id:
+                embeds_i_j = accelerator.unwrap_model(model).language_model.transformer.wte(batch["contexts_padded_left"][not_repeated_idx[i,j]])
+            elif batch["contexts_padded_left"][not_repeated_idx[i,j]].item() < len(tokenizer):
+                embeds_i.append(embeds_i_j.unsqueeze(0))
+            else:
+                pred = args.pseudo_tokens_to_item_ids[batch["contexts_padded_left"][not_repeated_idx][i,j].item()]
+                total_pooled = accelerator.unwrap_model(model).annoy_base_rerank.get_item_vector(pred)
+                total_pooled = np.asarray(total_pooled)
+                item_embeds = torch.tensor(total_pooled, dtype=torch.float).unsqueeze(0).to(
+                    accelerator.device)
+                embeds_i += [REC_wte[0], item_embeds, REC_END_wte[0]]
+            # add the prediction on that data point
+            if preds[not_repeated_idx[i]] != -1:
+                pred = preds[not_repeated_idx[i]]
+                total_pooled = accelerator.unwrap_model(model).annoy_base_rerank.get_item_vector(pred)
+                total_pooled = np.asarray(total_pooled)
+                item_embeds = torch.tensor(total_pooled, dtype=torch.float).unsqueeze(0).to(accelerator.device)
+                embeds_i += [REC_wte[0], item_embeds, REC_END_wte[0]]
+            embeds_i = torch.cat(embeds_i)
+            embeds_i = torch.cat((embeds_i, suffix_embeds))
+            embeds_i = embeds_i.unsqueeze(0)
+
+            gen_ids_i = make_generation_embeds(embeds_i, model_to_use, args)
+
+            raw_gen_sens_i = tokenizer.batch_decode(gen_ids_i, skip_special_tokens=True)[0]
+            if args.placeholder_token in raw_gen_sens_i:
+                pred_rec.append(1)
+            else:
+                pred_rec.append(0)
+            gen_sens_i = "A: " + " ".join(raw_gen_sens_i.replace("\n", " ").split())
+            gen_sens.append(gen_sens_i)
+            tok_gen_sens_i = ("A: " + raw_gen_sens_i).strip().split()
+            tok_gen_sens.append(tok_gen_sens_i)
+
+        for i in range(len(batch["targets"][not_repeated_idx])):
+            if batch["targets"][not_repeated_idx[i]] != -1:
+                gt_rec.append(1)
+            else:
+                gt_rec.append(0)
+        raw_gt_sens = tokenizer.batch_decode(batch["raw_utterances"][not_repeated_idx],skip_special_tokens=True)
+        raw_gt_sens = [" ".join(x.replace("\n", " ").split()) for x in raw_gt_sens]
+        gt_sens = tokenizer.batch_decode(batch["utterances"][not_repeated_idx], skip_special_tokens=True)
+        gt_sens = [" ".join(x.replace("\n", " ").split()) for x in gt_sens]
+
+    ground_truths = (gt_rec, raw_gt_sens, gt_sens)
+    predicted = (pred_rec, gen_sens, tok_gen_sens)
+
+    return sources, ground_truths, predicted
+
+# response generation with the LM, using directly word embeddings (not tokens)
+def make_generation_embeds(inputs_embeds, model_to_use, args):
+    with torch.no_grad():
+        if args.generation_method == "beam_search":
+            generated = model_to_use.generate(
+                inputs_embeds = inputs_embeds,
+                max_new_tokens = args.utt_max_length,
+                num_return_sequences=1,
+                num_beams=args.num_beams,
+                eos_token_id=628
+            )
+        elif args.generation_method == "diverse_beam_search":
+            generated = model_to_use.generate(
+                inputs_embeds = inputs_embeds,
+                max_new_tokens = args.utt_max_length,
+                num_return_sequences=1,
+                num_beams=args.num_beams,
+                num_beam_groups=args.num_beam_groups,
+                diversity_penalty=args.diversity_penalty,
+                eos_token_id=628
+            )
+        elif args.generation_method == "top_k_sampling":
+            generated = model_to_use.generate(
+                inputs_embeds=inputs_embeds,
+                max_new_tokens=args.utt_max_length,
+                num_return_sequences=1,
+                do_sample=True,
+                num_beams=args.num_beams,
+                top_k=args.top_k,
+                temperature=args.sampling_temperature,
+                eos_token_id=628
+            )
+
+    return generated
