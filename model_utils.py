@@ -119,29 +119,12 @@ class AttentionIA(nn.Module):
         self.resid_dropout = nn.Dropout(config.resid_pdrop)
         self.pruned_heads = set()
 
-    def prune_heads(self, heads):
-        if len(heads) == 0:
-            return
-        heads, index = find_pruneable_heads_and_indices(
-            heads, self.n_head, self.split_size // self.n_head, self.pruned_heads
-        )
-        index_attn = torch.cat([index, index + self.split_size, index + (2 * self.split_size)])
-
-        # Prune conv1d layers
-        self.c_attn = prune_conv1d_layer(self.c_attn, index_attn, dim=1)
-        self.c_proj = prune_conv1d_layer(self.c_proj, index, dim=0)
-
-        # Update hyper params
-        self.split_size = (self.split_size // self.n_head) * (self.n_head - len(heads))
-        self.n_head = self.n_head - len(heads)
-        self.pruned_heads = self.pruned_heads.union(heads)
-
     def attn(self, q, k, v, attention_mask=None, head_mask=None, output_attentions=False,
              inductive_attention_mask=None):
         # import pdb; pdb.set_trace()
         w = torch.matmul(q, k)
         if self.scale:
-            w = w / (Float(v.size(-1)) ** 0.5)
+            w = w / (v.size(-1).float() ** 0.5)
         nd, ns = w.size(-2), w.size(-1)
 
         if not self.is_cross_attention:
@@ -354,13 +337,6 @@ class GPT2InductiveAttention(GPT2Model):
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
             if getattr(self.config, "gradient_checkpointing", False) and self.training:
-                if use_cache:
-                    logger.warn(
-                        "use_cache=True is incompatible with config.gradient_checkpointing=True. "
-                        "Setting use_cache=False..."
-                    )
-                    use_cache = False
-
                 def create_custom_forward(module):
                     def custom_forward(*inputs):
                         # None for past_key_value

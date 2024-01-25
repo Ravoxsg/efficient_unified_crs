@@ -21,7 +21,7 @@ from engine import training_loop, validate
 
 parser = argparse.ArgumentParser()
 
-root = "/data/mathieu/efficient_unified_crs/"
+root = "/data/mathieu/efficient_unified_crs/" # todo: change to your home directory
 
 # general
 parser.add_argument("--seed", type=int, default=42)
@@ -235,8 +235,8 @@ def main(args):
             datas = [train_data, test_data]
         elif args.dataset_name == "INSPIRED":
             train_data = torch.load(args.train_path)
-            dev_data = torch.load(root+f"DATA/{args.dataset_name}/dev_data_processed_v2")
-            test_data = torch.load(root+f"DATA/{args.dataset_name}/test_data_processed_v2")
+            dev_data = torch.load(root+f"data/{args.dataset_name}/dev_data_processed")
+            test_data = torch.load(root+f"data/{args.dataset_name}/test_data_processed")
             datas = [train_data, dev_data, test_data]
         for data in datas:
             for i in tqdm.tqdm(range(len(data))):

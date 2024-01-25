@@ -605,19 +605,19 @@ def validate_language_metrics_batch_embeds(tokenizer, batch, model, accelerator,
         for i in range(batch["contexts_padded_left"][not_repeated_idx].shape[0]):
             source = tokenizer.decode(batch["raw_contexts"][not_repeated_idx[i]], skip_special_tokens=True)
             sources.append(source)
-        embeds_i = []
-        for j in range(batch["contexts_padded_left"][not_repeated_idx].shape[1]):
-            if batch["contexts_padded_left"][not_repeated_idx[i,j]].item() == tokenizer.pad_token_id:
-                embeds_i_j = accelerator.unwrap_model(model).language_model.transformer.wte(batch["contexts_padded_left"][not_repeated_idx[i,j]])
-            elif batch["contexts_padded_left"][not_repeated_idx[i,j]].item() < len(tokenizer):
-                embeds_i.append(embeds_i_j.unsqueeze(0))
-            else:
-                pred = args.pseudo_tokens_to_item_ids[batch["contexts_padded_left"][not_repeated_idx][i,j].item()]
-                total_pooled = accelerator.unwrap_model(model).annoy_base_rerank.get_item_vector(pred)
-                total_pooled = np.asarray(total_pooled)
-                item_embeds = torch.tensor(total_pooled, dtype=torch.float).unsqueeze(0).to(
-                    accelerator.device)
-                embeds_i += [REC_wte[0], item_embeds, REC_END_wte[0]]
+            embeds_i = []
+            for j in range(batch["contexts_padded_left"][not_repeated_idx].shape[1]):
+                if batch["contexts_padded_left"][not_repeated_idx[i, j]].item() == tokenizer.pad_token_id:
+                    continue
+                if batch["contexts_padded_left"][not_repeated_idx[i, j]].item() < len(tokenizer):
+                    embeds_i_j = accelerator.unwrap_model(model).language_model.transformer.wte(batch["contexts_padded_left"][not_repeated_idx[i, j]])
+                    embeds_i.append(embeds_i_j.unsqueeze(0))
+                else:
+                    pred = args.pseudo_tokens_to_item_ids[batch["contexts_padded_left"][not_repeated_idx][i, j].item()]
+                    total_pooled = accelerator.unwrap_model(model).annoy_base_rerank.get_item_vector(pred)
+                    total_pooled = np.asarray(total_pooled)
+                    item_embeds = torch.tensor(total_pooled, dtype=torch.float).unsqueeze(0).to(accelerator.device)
+                    embeds_i += [REC_wte[0], item_embeds, REC_END_wte[0]]
             # add the prediction on that data point
             if preds[not_repeated_idx[i]] != -1:
                 pred = preds[not_repeated_idx[i]]
@@ -642,7 +642,7 @@ def validate_language_metrics_batch_embeds(tokenizer, batch, model, accelerator,
             tok_gen_sens.append(tok_gen_sens_i)
 
         for i in range(len(batch["targets"][not_repeated_idx])):
-            if batch["targets"][not_repeated_idx[i]] != -1:
+            if batch["targets"][not_repeated_idx][i] != -1:
                 gt_rec.append(1)
             else:
                 gt_rec.append(0)
