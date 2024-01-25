@@ -21,7 +21,6 @@ def training_loop(train_dataloader, test_dataloader, tokenizer, model, optimizer
         model.train()
 
     ppls, all_loss_ppl, all_loss_recall, all_loss_rerank = [], [], [], []
-    times, times_embeds, times_language, times_recall, times_rerank = [], [], [], [], []
     for ep in range(1, args.num_epochs + 1):
         if args.previous_recommended_ids_negative:
             args.previous_count = []
@@ -33,9 +32,7 @@ def training_loop(train_dataloader, test_dataloader, tokenizer, model, optimizer
         for batch in tqdm.tqdm(train_dataloader, disable=not accelerator.is_main_process):
             with accelerator.accumulate(model):
                 # batch size of train_dataloader is 1
-                t1 = time.time()
-                avg_ppl, loss_ppl, loss_recall, loss_rerank, batch_times = train_one_iteration(batch, tokenizer, model, criterions, accelerator, args)
-                (time_embeds, time_language, time_recall, time_rerank) = batch_times
+                avg_ppl, loss_ppl, loss_recall, loss_rerank = train_one_iteration(batch, tokenizer, model, criterions, accelerator, args)
                 avg_ppl = np.nan_to_num(avg_ppl)
                 loss_ppl = np.nan_to_num(loss_ppl)
                 loss_recall = np.nan_to_num(loss_recall)
@@ -51,12 +48,6 @@ def training_loop(train_dataloader, test_dataloader, tokenizer, model, optimizer
                 if scheduler is not None:
                     scheduler.step()
                 optimizer.zero_grad()
-                t2 = time.time()
-                times.append(t2 - t1)
-                times_embeds.append(time_embeds)
-                times_language.append(time_language)
-                times_recall.append(time_recall)
-                times_rerank.append(time_rerank)
 
                 if (update_count % args.num_gradients_accumulation == args.num_gradients_accumulation - 1) or (update_count == len(train_dataloader)):
                     # update for gradient accumulation
@@ -73,13 +64,6 @@ def training_loop(train_dataloader, test_dataloader, tokenizer, model, optimizer
                     logger.info(f"Epoch {ep}, Batch {update_count}, # optim steps: {optim_count}, LR: {lr:.10f}")
                     logger.info(f"median ppl: {median_ppl:.4f}, mean ppl: {mean_ppl:.4f}, loss ppl: {mean_loss_ppl: .4f}, loss recall: {mean_loss_recall: .4f}, loss_rerank: {mean_loss_rerank: .4f}")
                 ppls, all_loss_ppl, all_loss_recall, all_loss_rerank = [], [], [], []
-                mean_time = np.nan_to_num(np.mean(np.array(times)))
-                mean_time_embeds = np.nan_to_num(np.mean(np.array(times_embeds)))
-                mean_time_language = np.nan_to_num(np.mean(np.array(times_language)))
-                mean_time_recall = np.nan_to_num(np.mean(np.array(times_recall)))
-                mean_time_rerank = np.nan_to_num(np.mean(np.array(times_rerank)))
-                logger.info(f"Time/batch: {mean_time:.4f}, time for embeds: {mean_time_embeds:.4f}, LM: {mean_time_language: .4f}, recall: {mean_time_recall: .4f}, rerank: {mean_time_rerank: .4f}")
-                times, times_embeds, times_language, times_recall, times_rerank = [], [], [], [], []
 
                 if (update_count % args.eval_every == 0):
                     validate(ep, test_dataloader, tokenizer, model, criterions, logger, accelerator, args)
@@ -113,12 +97,9 @@ def train_one_iteration(batch, tokenizer, model, criterions, accelerator, args):
     no_rec_idx = [i for i in range(len(batch["targets"])) if batch["targets"][i] == -1]
     has_rec_idx = [i for i in range(len(batch["targets"])) if batch["targets"][i] != -1]
 
-    times_embeds, times_language, times_recall, times_rerank = [], [], [], []
-
-    t0 = time.time()
     embeds = []
     for i in range(batch["context_with_utterances"].shape[0]):
-        embeds_i = []
+        embeds_context_i, embeds_utterance_i = [], []
         for j in range(batch["context_with_utterances"].shape[1]):
             if batch["context_with_utterances"][i,j].item() < len(tokenizer):
                 embeds_i_j = accelerator.unwrap_model(model).language_model.transformer.wte(batch["context_with_utterances"][i,j])
@@ -126,17 +107,19 @@ def train_one_iteration(batch, tokenizer, model, criterions, accelerator, args):
                 item_id = args.pseudo_tokens_to_item_ids[batch["context_with_utterances"][i,j].item()]
                 embeds_i_j = accelerator.unwrap_model(model).compute_encoded_embeddings_for_items([item_id], args.items_db)[0]
                 embeds_i_j = accelerator.unwrap_model(model).rerank_item_wte_mapper(embeds_i_j)
-            embeds_i.append(embeds_i_j)
-        embeds.append(embeds_i)
+            if j < batch["context_lengths"][i]:
+                embeds_context_i.append(embeds_i_j.unsqueeze(0))
+            else:
+                embeds_utterance_i.append(embeds_i_j.unsqueeze(0))
+        embeds_context_i = torch.cat(embeds_context_i)
+        embeds_utterance_i = torch.cat(embeds_utterance_i)
+        embeds.append((embeds_context_i, embeds_utterance_i))
     embeds_no_rec = [embeds[x] for x in no_rec_idx]
     embeds_has_rec = [embeds[x] for x in has_rec_idx]
-    t1 = time.time()
-    times_embeds.append(t1 - t0)
 
     # data points without recommendation (just response generation aka language modeling)
     if len(no_rec_idx) > 0:
         with accelerator.autocast():
-            t0 = time.time()
             language_targets = batch["context_with_utterances"][no_rec_idx][:, 1:].contiguous()
             language_targets[language_targets >= len(tokenizer)] = 0
             language_logits = accelerator.unwrap_model(model).forward_pure_language_turn(embeds_no_rec)
@@ -152,17 +135,12 @@ def train_one_iteration(batch, tokenizer, model, criterions, accelerator, args):
             loss_ppl = args.language_loss_train_coeff * loss_ppl
             accelerator.backward(loss_ppl)
 
-            del loss_ppl;
-            del language_logits;
-            del language_targets
+            del loss_ppl, language_logits, language_targets
             gc.collect()
-            t1 = time.time()
-            times_language.append(t1 - t0)
 
     # data points with recommended items
     if len(has_rec_idx) > 0:
         with accelerator.autocast():
-            t0 = time.time()
             # recall
             previous_ids = None
             if args.previous_recommended_ids_negative:
@@ -206,11 +184,8 @@ def train_one_iteration(batch, tokenizer, model, criterions, accelerator, args):
             del recall_logits
             del recall_targets
             gc.collect()
-            t1 = time.time()
-            times_recall.append(t1 - t0)
 
             # rerank
-            t0 = time.time()
             encoded_items_transfer = None
             if args.tie_sampled_ids_recall_rerank:
                 encoded_items_transfer = encoded_items_embeddings
@@ -239,16 +214,8 @@ def train_one_iteration(batch, tokenizer, model, criterions, accelerator, args):
             del rerank_logits
             del rerank_targets
             gc.collect()
-            t1 = time.time()
-            times_rerank.append(t1 - t0)
 
-    time_embeds = np.mean(np.array(times_embeds))
-    time_language = np.mean(np.array(times_language))
-    time_recall = np.mean(np.array(times_recall))
-    time_rerank = np.mean(np.array(times_rerank))
-    times = (time_embeds, time_language, time_recall, time_rerank)
-
-    return np.mean(ppl_history), np.mean(all_loss_ppl), np.mean(all_loss_recall), np.mean(all_loss_rerank), times
+    return np.mean(ppl_history), np.mean(all_loss_ppl), np.mean(all_loss_recall), np.mean(all_loss_rerank)
 
 # validation on the entire dataset
 def validate(ep, dataloader, tokenizer, model, criterions, logger, accelerator, args):
