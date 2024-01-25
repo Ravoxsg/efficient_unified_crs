@@ -249,8 +249,6 @@ def main(args):
         genres_freqs[unique_genre] = frac / 100
     logger.info("\n")
     args.genres_freqs = genres_freqs
-    items_freqs = pickle.load(open(args.items_db_path + "_freqs", "rb"))
-    args.items_freqs = items_freqs
 
     # items <-> pseudo tokens mapping
     item_ids_to_pseudo_tokens, pseudo_tokens_to_item_ids = {}, {}
