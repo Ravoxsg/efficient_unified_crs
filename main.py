@@ -7,7 +7,7 @@ import os
 import logging
 from accelerate.logging import get_logger
 from torch.utils.data import DataLoader
-from transformer import GPT2TokenizerFast
+from transformers import GPT2TokenizerFast
 from transformers import AdamW, get_linear_schedule_with_warmup
 from accelerate import Accelerator
 from peft import get_peft_model, LoraConfig
@@ -26,8 +26,8 @@ root = "/data/mathieu/efficient_unified_crs/" # todo: change to your home direct
 # general
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--cuda", type=bool, default=True)
-parser.add_argument("--mode", type=str, default="eval", choices=["train", "eval"])
-parser.add_argument("--debug", type=bool, default=False)
+parser.add_argument("--mode", type=str, default="train", choices=["train", "eval"])
+parser.add_argument("--debug", type=bool, default=True)
 parser.add_argument("--debug_size", type=int, default=10)
 parser.add_argument("--max_val_size", type=int, default=10000)
 parser.add_argument("--root", type=str, default=root)
@@ -43,19 +43,16 @@ parser.add_argument("--sep_token", type=str, default="[SEP]")
 parser.add_argument("--placeholder_token", type=str, default="[MOVIE_ID]")
 parser.add_argument("--lm_trim_offset", type=int, default=100, help="offset to trim language model wte inputs length = (1024-lm_trim_offset)")
 ### response generation
-parser.add_argument("--context_max_length", type=int, default=256) # 200
-parser.add_argument("--utt_max_length", type=int, default=64) # 60, 56, 64
+parser.add_argument("--context_max_length", type=int, default=256) # 256
+parser.add_argument("--utt_max_length", type=int, default=64) # 64
 parser.add_argument("--check_learned_weights", type=bool, default=True)
 parser.add_argument("--freeze_backbone_for_items", type=bool, default=True)
 parser.add_argument("--train_item_encoding_chunk_size", type=int, default=50)
-parser.add_argument("--train_item_encoding_chunk_size", type=int, default=50)
-parser.add_argument("--tia_recall_and_rerank", type=bool, default=True)
+parser.add_argument("--tie_recall_and_rerank", type=bool, default=True)
 ### parameter efficiency (LORA)
 parser.add_argument("--only_tune_new_tokens", type=bool, default=False)
-parser.add_argument("--use_lora", type=bool, default=False)
 parser.add_argument("--n_lora_layers_to_tune", type=int, default=3)
 parser.add_argument("--tune_lora_in_items_encoding", type=bool, default=False)
-parser.add_argument("--tune_model_and_lora", type=bool, default=False)
 parser.add_argument("--lora_r", type=int, default=16, help="lora attention dimension")
 parser.add_argument("--lora_alpha", type=int, default=16, help="lora alpha")
 parser.add_argument("--lora_dropout", type=float, default=0.1, help="lora dropout rate")
@@ -67,9 +64,8 @@ parser.add_argument("--continue_training", type=bool, default=False)
 parser.add_argument("--num_epochs", type=int, default=20)
 parser.add_argument("--train_bs", type=int, default=8)
 parser.add_argument("--eval_bs", type=int, default=8)
-parser.add_argument("--num_gradients_accumulation", type=int, default=150)
-parser.add_argument("--num_samples_recall_train", type=int, default=150)
-parser.add_argument("--num_samples_rerank_train", type=int, default=150)
+parser.add_argument("--num_gradients_accumulation", type=int, default=1)
+parser.add_argument("--num_samples_recall_train", type=int, default=150) # 150
 parser.add_argument("--num_samples_rerank_train", type=int, default=150) # 150
 parser.add_argument("--validation_recall_size", type=int, default=700) # Not expended:
 parser.add_argument("--expanded_reranking", type=bool, default=False)
@@ -125,7 +121,7 @@ parser.add_argument("--analyze_genre", type=bool, default=False)
 parser.add_argument("--save", type=bool, default=True)
 parser.add_argument("--exp_name", type=str, default="temp")
 # checkpoint (for args.mode == "eval" only)
-parser.add_argument("--load_model_path", type=str, default="Outputs/REDIAL/unified_full_split_batchified_v9/CRS_Train_8.pt")
+parser.add_argument("--load_model_path", type=str, default="Outputs/REDIAL/temp/CRS_Train_8.pt")
 
 args = parser.parse_args()
 args.debug = False
@@ -154,8 +150,8 @@ def main(args):
     seed_everything(args.seed)
 
     # output dir
-    if not os.pah.exists(root+f"Outputs/{args.dataset_name}/{args.exp_name}/"):
-        os.makedits(root+f"Outputs/{args.dataset_name}/{args.exp_name}/CRS_Train_")
+    if not os.path.exists(root+f"Outputs/{args.dataset_name}/{args.exp_name}/"):
+        os.makedirs(root+f"Outputs/{args.dataset_name}/{args.exp_name}/CRS_Train_")
     args.model_saved_path = root+f"Outputs/{args.dataset_name}/{args.exp_name}/CRS_Train_"
 
     # accelerator
@@ -189,23 +185,14 @@ def main(args):
     # tokenizer and base models
     tokenizer = GPT2TokenizerFast.from_pretrained(args.decoder)
     dec_model = GPT2InductiveAttentionHeadModel.from_pretrained(args.decoder)
-    args.use_lora = False
-    print(args.use_lora)
-    if args.use_lora:
-        lora_config = LoraConfig(
-            peft_type="LORA",
-            r=args.lora_r,
-            lora_alpha=args.lora_alpha,
-            lora_dropout=args.lora_dropout,
-            task_type=args.task_type
-        )
-        dec_model = get_peft_model(dec_model, peft_config=lora_config)
-        if args.tune_model_and_lora:
-            dec_model.requires_grad_(True)
-    else:
-        # added: full finetune
-        for p in dec_model.parameters():
-            p.requires_grad_(True)
+    lora_config = LoraConfig(
+        peft_type="LORA",
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+        task_type=args.task_type
+    )
+    dec_model = get_peft_model(dec_model, peft_config=lora_config)
 
     # extra tokens:
     args.n_original_tokens = len(tokenizer)
@@ -221,7 +208,7 @@ def main(args):
 
     # metadata
     # cold start user IDs
-    cold_start_ids = pickle.load(open(root+f"DATA/{args.dataset_name}/{args.test_split}_cold_start_ids.pkl", "rb"))
+    cold_start_ids = pickle.load(open(root+f"data/{args.dataset_name}/{args.test_split}_cold_start_ids.pkl", "rb"))
     args.cold_start_ids = cold_start_ids
     # items
     items_db = torch.load(args.items_db_path)

@@ -8,7 +8,6 @@ import re
 from sklearn.metrics import recall_score, precision_score, f1_score
 from rouge_score import rouge_scorer
 from evaluation import distinct_metrics
-from analysis import further_analysis
 
 
 # overall training loop, on the entire dataset
@@ -415,11 +414,6 @@ def validate(ep, dataloader, tokenizer, model, criterions, logger, accelerator, 
     mean_rr = (rr1 + rr10 + rr50) / 3
     logger.info(f"mean rerank (%): {mean_rr:.4f}, rerank top1 (%): {rr1:.4f}, top10 (%): {rr10:.4f}, top50( %): {rr50:.4f}")
     logger.info(f'\n')
-
-    # Further analysis (optional)
-    recalls = (recall_top100, recall_top300, recall_top500)
-    reranks = (rerank_top1, rerank_top10, rerank_top50)
-    further_analysis(cold_start_tags, turn_nums, gt_ids, total_predicted_ids, gt_ranks, recalls, reranks, logger, args)
 
     model.train()
 
