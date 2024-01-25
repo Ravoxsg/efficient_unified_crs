@@ -253,7 +253,14 @@ class MovieRecDataCollator:
             if len(x["raw_utterance"]) < max_raw_utterance_length:
                 extra_tokens = [self.tokenizer.pad_token_id] * (max_raw_utterance_length - len(x["raw_utterance"]))
                 extra_tokens = torch.tensor(extra_tokens)
-                x["raw_utterance"] = torch.cat([extra_tokens, x["raw_utterance"]])
+                x["raw_utterance"] = torch.cat([x["raw_utterance"], extra_tokens])
+            raw_utterances.append(x["raw_utterance"].unsqueeze(0))
+
+            # utterance
+            if len(x["utterance"]) < max_utterance_length:
+                extra_tokens = [self.tokenizer.pad_token_id] * (max_utterance_length - len(x["utterance"]))
+                extra_tokens = torch.tensor(extra_tokens)
+                x["utterance"] = torch.cat([x["utterance"], extra_tokens])
             utterances.append(x["utterance"].unsqueeze(0))
 
         context_with_utterances = torch.cat(context_with_utterances)
