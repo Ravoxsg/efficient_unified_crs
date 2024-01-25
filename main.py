@@ -110,13 +110,6 @@ parser.add_argument("--item_properties", type=list, default=[0,1,2,3,4]) # 0: ti
 parser.add_argument("--no_pooling", type=bool, default=False)
 parser.add_argument("--no_item_head", type=bool, default=False)
 
-# further analysis
-parser.add_argument("--analyze_ranks", type=bool, default=False)
-parser.add_argument("--analyze_preds", type=bool, default=False)
-parser.add_argument("--analyze_cold_start", type=bool, default=False)
-parser.add_argument("--analyze_turns", type=bool, default=False)
-parser.add_argument("--analyze_genre", type=bool, default=False)
-
 # export
 parser.add_argument("--save", type=bool, default=True)
 parser.add_argument("--exp_name", type=str, default="temp")
@@ -207,9 +200,6 @@ def main(args):
     logger.info(f"Final vocab size: {len(tokenizer)}")
 
     # metadata
-    # cold start user IDs
-    cold_start_ids = pickle.load(open(root+f"data/{args.dataset_name}/{args.test_split}_cold_start_ids.pkl", "rb"))
-    args.cold_start_ids = cold_start_ids
     # items
     items_db = torch.load(args.items_db_path)
     logger.info(f"DB has {len(items_db)} items")
