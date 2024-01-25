@@ -133,17 +133,18 @@ args.debug = False
 dataset_names = ["REDIAL", "INSPIRED"]
 index = dataset_names.index(args.dataset_name)
 train_paths = [
-    root+f"DATA/{args.dataset_name}/trainval_data_processed_full", # [train_data_processed (8188), train_data_processed_full (9005), trainval_data_processed_full (1006 -> 65670)]
-    root+f"DATA/{args.dataset_name}/train_data_processed_v2" # [train_data_processed_full/v2 (801 -> 8152)]
+    root+f"data/{args.dataset_name}/train_data_processed", # size: 10006 -> 65670
+    root+f"data/{args.dataset_name}/train_data_processed" # size: 801 -> 8152
 ]
 test_paths = [
-    root+f"DATA/{args.dataset_name}/test_data_processed_full", # [val_data_processed_full (1001), test_data_processed (1120), test_data_processed_full (1342 -> 8329)]
-    root+f"DATA/{args.dataset_name}/test_data_processed_v2" # [dev_data_processed_full/v2 (99 -> 977), test_data_processed_full (99 -> 993)]
+    root+f"data/{args.dataset_name}/test_data_processed", # size: 1342 -> 8329
+    #root+f"data/{args.dataset_name}/dev_data_processed", # size: 99 -> 977
+    root+f"data/{args.dataset_name}/test_data_processed" # size: 99 -> 993
 ]
 remove_unused_items = [False, True]
 args.train_path = train_paths[index]
 args.test_path = test_paths[index]
-args.items_db_path = root+f"DATA/{args.dataset_name}/movie_db_full"
+args.items_db_path = root+f"data/{args.dataset_name}/movie_db"
 args.test_split = args.test_path.split("/")[-1].split("_")[0]
 args.remove_unused_items = remove_unused_items[index]
 
