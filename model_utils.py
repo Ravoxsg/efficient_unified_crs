@@ -200,8 +200,7 @@ class AttentionIA(nn.Module):
         else:
             present = None
 
-        attn_outputs = self.attn(query, key, value, attention_mask, head_mask, output_attentions,
-                                 inductive_attention_mask)
+        attn_outputs = self.attn(query, key, value, attention_mask, head_mask, output_attentions, inductive_attention_mask)
         a = attn_outputs[0]
 
         a = self.merge_heads(a)
@@ -303,10 +302,12 @@ class GPT2InductiveAttention(GPT2Model):
         head_mask = self.get_head_mask(head_mask, self.config.n_layer)
 
         if inputs_embeds is None:
+            print("HERE", input_ids.shape)
             inputs_embeds = self.wte(input_ids)
         # print("*"*50)
         # print(position_ids)
         position_embeds = self.wpe(position_ids)
+        print(inputs_embeds.shape, position_embeds.shape)
         hidden_states = inputs_embeds + position_embeds
 
         if token_type_ids is not None:

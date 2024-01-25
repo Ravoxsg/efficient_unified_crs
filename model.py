@@ -178,9 +178,11 @@ class PECRSModel(torch.nn.Module):
         embeds = []
         for i in range(len(embeds_no_rec)):
             embeds_i = torch.cat((embeds_no_rec[i][0], embeds_no_rec[i][1]))
+            print(i, embeds_no_rec[i][0].shape, embeds_i.shape)
             embeds.append(embeds_i.unsqueeze(0))
         embeds = torch.cat(embeds)
 
+        print("embeds", embeds.shape)
         lm_outputs = self.language_model(inputs_embeds=embeds)
         train_logits = lm_outputs.logits[:, -1, :].contiguous()  # skip the last one
 

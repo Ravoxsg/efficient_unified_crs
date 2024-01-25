@@ -121,12 +121,10 @@ def train_one_iteration(batch, tokenizer, model, criterions, accelerator, args):
         embeds_i = []
         for j in range(batch["context_with_utterances"].shape[1]):
             if batch["context_with_utterances"][i,j].item() < len(tokenizer):
-                embeds_i_j = accelerator.unwrap_model(model).language_model.transformer.wte(batch[
-                    "context_with_utterances"][i,j])
+                embeds_i_j = accelerator.unwrap_model(model).language_model.transformer.wte(batch["context_with_utterances"][i,j])
             else:
                 item_id = args.pseudo_tokens_to_item_ids[batch["context_with_utterances"][i,j].item()]
-                embeds_i_j = accelerator.unwrap_model(model).compute_encoded_embeddings_for_items([
-                    item_id])[0]
+                embeds_i_j = accelerator.unwrap_model(model).compute_encoded_embeddings_for_items([item_id], args.items_db)[0]
                 embeds_i_j = accelerator.unwrap_model(model).rerank_item_wte_mapper(embeds_i_j)
             embeds_i.append(embeds_i_j)
         embeds.append(embeds_i)
@@ -448,7 +446,7 @@ def validate_one_iteration(batch, tokenizer, model, criterions, accelerator, arg
         for i in range(batch["context_with_utterances"][no_rec_idx].shape[0]):
             context_length = batch["context_lengths"][no_rec_idx[i]]
             utterance_length = batch["utterance_lengths"][no_rec_idx[i]]
-            language_targets_mask[i, context_length:(context_length + utterance_length - 1)] = 1
+            language_targets_mask[i, context_length:(context_length+utterance_length-1)] = 1
 
         loss_ppl_batch = criterion_language(language_logits, language_targets, language_targets_mask, label_smoothing=-1, reduce="sentence")
         loss_ppl = loss_ppl_batch.mean()
@@ -486,7 +484,7 @@ def validate_one_iteration(batch, tokenizer, model, criterions, accelerator, arg
         for i in range(batch["context_with_utterances"][has_rec_idx].shape[0]):
             context_length = batch["context_lengths"][has_rec_idx[i]]
             utterance_length = batch["utterance_lengths"][has_rec_idx[i]]
-            language_targets_mask[i, (context_length - 1):(context_length + utterance_length)] = 1
+            language_targets_mask[i, (context_length-1):(context_length+utterance_length)] = 1
         language_targets[language_targets == len(tokenizer)] = 0
         loss_ppl_batch = criterion_language(language_logits, language_targets, language_targets_mask, label_smoothing=-1, reduce="sentence")
         loss_ppl = loss_ppl_batch.mean()
