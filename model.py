@@ -20,11 +20,11 @@ class PECRSModel(torch.nn.Module):
         # item db and annoy index base
         self.item_id_to_idx = {}
         self.idx_to_item_id = {}
-        for i in range(len(list(self.args.items_db_keys()))):
+        for i in range(len(list(self.args.items_db.keys()))):
             id = list(self.args.items_db.keys())[i]
             idx = i
             self.item_id_to_idx[id] = idx
-            self.idx_to_item_idx[idx] = id
+            self.idx_to_item_id[idx] = id
 
         self.recall_lm_query_mapper = torch.nn.Linear(self.language_model.config.n_embd, self.language_model.config.n_embd)
         self.recall_item_wte_mapper = torch.nn.Linear(self.language_model.config.n_embd, self.language_model.config.n_embd)
@@ -38,7 +38,7 @@ class PECRSModel(torch.nn.Module):
             nn.ReLU(),
             nn.Linear(self.language_model.config.n_embd // 2, self.language_model.config.n_embd)
         )
-        self.item_head_l2 = nn.Linear(self.language_model.config.n_embd, self.language_model.config.n_embd // 2)
+        self.item_head_l2 = nn.Linear(self.language_model.config.n_embd, self.language_model.config.n_embd)
         self.weights = nn.Parameter(torch.ones(1024))
 
     def get_rec_token_wtes(self):
@@ -46,8 +46,8 @@ class PECRSModel(torch.nn.Module):
         return self.language_model.transformer.wte(rec_token_input_ids)
 
     def item_embeddings(self, h):
-        h = self.item_head_11(h) + h
-        h = self.item_head_12(h)
+        h = self.item_head_l1(h) + h
+        h = self.item_head_l2(h)
         return h
 
     # get items representations

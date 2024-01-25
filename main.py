@@ -252,7 +252,7 @@ def main(args):
 
     # items <-> pseudo tokens mapping
     item_ids_to_pseudo_tokens, pseudo_tokens_to_item_ids = {}, {}
-    item_ids = list[str](args.items_db.keys())
+    item_ids = list(args.items_db.keys())
     for i in range(len(item_ids)):
         item_id = item_ids[i]
         pseudo_token = len(tokenizer) + i
@@ -275,8 +275,8 @@ def main(args):
                       list(model.recall_item_wte_mapper.named_parameters()) + \
                       list(model.rerank_item_wte_mapper.named_parameters()) + \
                       list(model.rerank_logits_mapper.named_parameters()) + \
-                      list(model.item_head_11.named_parameters()) + \
-                      list(model.item_head_12.named_parameters())
+                      list(model.item_head_l1.named_parameters()) + \
+                      list(model.item_head_l2.named_parameters())
     param_optimizer += [("weights", model.weights)]
 
     # parameters

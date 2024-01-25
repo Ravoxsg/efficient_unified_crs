@@ -30,7 +30,7 @@ class MovieRecDataset(Dataset):
 
         logger.info(f"The {split} dataset final version has {len(self.data)} points")
 
-        self.turn_ending = torch.tensor([[628, 198]])  # end of turn, '\n\n\n't
+        self.turn_ending = torch.tensor([628, 198])  # end of turn, '\n\n\n't
         self.REC_token = self.tokenizer(args.rec_token, return_tensors="pt")['input_ids'][0]
         self.REC_END_token = self.tokenizer(args.rec_end_token, return_tensors="pt")['input_ids'][0]
         self.SEP_token = self.tokenizer(args.sep_token, return_tensors="pt")['input_ids'][0]

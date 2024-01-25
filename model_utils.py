@@ -124,7 +124,7 @@ class AttentionIA(nn.Module):
         # import pdb; pdb.set_trace()
         w = torch.matmul(q, k)
         if self.scale:
-            w = w / (v.size(-1).float() ** 0.5)
+            w = w / (v.size(-1) ** 0.5)
         nd, ns = w.size(-2), w.size(-1)
 
         if not self.is_cross_attention:
