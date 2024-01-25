@@ -276,8 +276,8 @@ class PECRSModel(torch.nn.Module):
                 short_encoded_items_embeddings = self.compute_encoded_embeddings_for_items(all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
                 encoded_items_embeddings = torch.zeros((bs*num_samples, short_encoded_items_embeddings.shape[-1]), dtype=torch.float, device=self.device)
                 for i in range(bs):
-                    begin = i * num_samples
-                    end = (i + 1) * num_samples
+                    begin = i*num_samples
+                    end = (i+1)*num_samples
                     encoded_items_embeddings[begin:(end-1), :] = short_encoded_items_embeddings[:(num_samples-1), :]
                     encoded_items_embeddings[(end-1), :] = short_encoded_items_embeddings[num_samples-1+i, :]
         else:
@@ -294,10 +294,10 @@ class PECRSModel(torch.nn.Module):
         all_logits, all_targets = [], []
         for i in range(logits.shape[0]):
             logits_i = logits[i]
-            logits_i = torch.cat((logits_i[:(context_lengths[i]-1), :], logits_i[(context_lengths[i]+3):-1, :]))
+            logits_i = torch.cat((logits_i[:(context_lengths[i]), :], logits_i[(context_lengths[i]+3):-1, :]))
             all_logits.append(logits_i.unsqueeze(0))
             targets_i = context_with_utterances_tokens[i]
-            targets_i = torch.cat((targets_i[:(context_lengths[i]-1)], REC_targets[0], targets_i[(context_lengths[i]+1):]))
+            targets_i = torch.cat((targets_i[1:(context_lengths[i])], REC_targets[0], targets_i[(context_lengths[i]+1):]))
             all_targets.append(targets_i.unsqueeze(0))
         language_logits = torch.cat(all_logits)
         language_targets = torch.cat(all_targets)
@@ -321,29 +321,24 @@ class PECRSModel(torch.nn.Module):
             all_sampled_item_ids, all_gt_item_id_indices = [], []
             for i in range(context_tokens.shape[0]):
                 # sample num_samples item ids to train recall with "recommendation as classification"
-                sampled_item_ids = sample_ids_from_db(targets[i], num_samples, self.args,
-                                                      previous_recommended_ids=previous_recommended_ids)
+                sampled_item_ids = sample_ids_from_db(targets[i], num_samples, self.args, previous_recommended_ids=previous_recommended_ids)
                 all_sampled_item_ids += sampled_item_ids
                 gt_item_id_index = sampled_item_ids.index(targets[i])
                 all_gt_item_id_indices.append(gt_item_id_index)
-            encoded_items_embeddings = self.compute_encoded_embeddings_for_items(all_sampled_item_ids,
-                                                                                 self.args.items_db,
-                                                                                 chunk_size=self.args.train_item_encoding_chunk_size)
+            encoded_items_embeddings = self.compute_encoded_embeddings_for_items(all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
         else:
-            all_gt_item_id_indices = [num_samples - 1] * len(indices)
+            all_gt_item_id_indices = [num_samples-1] * len(indices)
         items_wtes = self.rerank_item_wte_mapper(encoded_items_embeddings)
         bs = len(indices)
         total_wtes = items_wtes.reshape((bs, num_samples, items_wtes.shape[-1]))
         total_wtes_len = total_wtes.shape[1]
 
         combined_position_ids, embeds = [], []
-        expected_len = context_tokens.shape[1] + 1 + total_wtes_len
+        expected_len = context_tokens.shape[1]+1+total_wtes_len
         for i in range(context_tokens.shape[0]):
             past_length = context_lengths[i]
-            position_ids_i = torch.arange(0, past_length + 1, dtype=torch.long, device=self.device)
-            combined_position_ids_i = torch.cat((position_ids_i, torch.zeros((expected_len - 1 -
-                                                                              past_length), dtype=torch.long,
-                                                                             device=self.device)))
+            position_ids_i = torch.arange(0, past_length+1, dtype=torch.long, device=self.device)
+            combined_position_ids_i = torch.cat((position_ids_i, torch.zeros((expected_len-1-past_length), dtype=torch.long, device=self.device)))
             combined_position_ids.append(combined_position_ids_i.unsqueeze(0))
             embeds_i = []
             for j in range(context_tokens.shape[1]):
@@ -365,12 +360,12 @@ class PECRSModel(torch.nn.Module):
         # trim sequence to smaller length (len < self.language_model.config.n_positions - self.args.lm_trim_offset)
         combined_position_ids_trimmed = self.trim_positional_ids(combined_position_ids, total_wtes_len)
         embeds_trimmed = self.trim_lm_wtes(embeds)
-        assert (combined_position_ids.shape[1] == embeds.shape[1] == embeds_trimmed.shape[1])
+        assert (combined_position_ids.shape[1] == embeds.shape[1])
 
         inductive_attention_mask = torch.zeros((context_tokens.shape[0], embeds.shape[1], embeds.shape[1]), dtype=torch.float, device=self.device)
         for i in range(context_tokens.shape[0]):
-            start = context_lengths[i] + 1
-            end = context_lengths[i] + 1 + total_wtes_len
+            start = context_lengths[i]+1
+            end = context_lengths[i]+1+total_wtes_len
             inductive_attention_mask[i, start:end, start:end] = 1
         rerank_lm_outputs = self.language_model(
             inputs_embeds=embeds_trimmed,
