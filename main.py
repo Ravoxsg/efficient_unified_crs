@@ -85,7 +85,7 @@ parser.add_argument("--tie_sampled_ids_recall_rerank", type=bool, default=True)
 parser.add_argument("--mixed_precision", type=str, default="fp16", choices=["no", "fp8", "fp16", "bf16"])
 ### evaluation
 parser.add_argument("--validate", type=bool, default=True)
-parser.add_argument("--epoch_0", type=bool, default=False)
+parser.add_argument("--epoch_0", type=bool, default=True)
 parser.add_argument("--print_every", type=int, default=100)
 parser.add_argument("--eval_every", type=int, default=45000)
 parser.add_argument("--show_weights_diff", type=bool, default=False)
@@ -116,7 +116,6 @@ parser.add_argument("--exp_name", type=str, default="temp")
 parser.add_argument("--load_model_path", type=str, default="Outputs/REDIAL/temp/CRS_Train_8.pt")
 
 args = parser.parse_args()
-args.debug = False
 
 dataset_names = ["REDIAL", "INSPIRED"]
 index = dataset_names.index(args.dataset_name)

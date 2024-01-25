@@ -78,12 +78,12 @@ def training_loop(train_dataloader, test_dataloader, tokenizer, model, optimizer
             previous_count = np.mean(args.previous_count)
             logger.info(f"Added {previous_count:.4f} hard negatives on average through previously mentioned movies")
             args.previous_count = []
-            # validation round of the epoch
-            if args.validate:
-                validate(ep, test_dataloader, tokenizer, model, criterions, logger, accelerator, args)
+        # validation round of the epoch
+        if args.validate:
+            validate(ep, test_dataloader, tokenizer, model, criterions, logger, accelerator, args)
             model.train()
-            if args.save:
-                save_path = args.model_saved_path + str(ep) + ".pt"
+        if args.save:
+            save_path = args.model_saved_path + str(ep) + ".pt"
             state_dict = accelerator.unwrap_model(model).state_dict()
             accelerator.save(state_dict, save_path)
             logger.info(f"saved model! at {save_path}")
@@ -166,7 +166,6 @@ def train_one_iteration(batch, tokenizer, model, criterions, accelerator, args):
                 utterance_length = batch["utterance_lengths"][has_rec_idx[i]]
                 language_targets_mask[i, (context_length-1):(context_length-1+utterance_length)] = 1
             language_targets[language_targets >= len(tokenizer)] = 0
-            print("before loss", language_logits.shape, language_targets.shape, language_targets_mask.shape)
             loss_ppl = criterion_language(language_logits, language_targets, language_targets_mask, label_smoothing=args.ls, reduce="batch")
             perplexity = np.exp(min(300, torch.nan_to_num(loss_ppl).item()))
             ppl_history.append(perplexity)
@@ -175,15 +174,10 @@ def train_one_iteration(batch, tokenizer, model, criterions, accelerator, args):
 
             # combined loss
             recall_total_loss = loss_recall + loss_ppl
-            if not (args.tied_sample_ids_recall_rerank):
+            if not (args.tie_sampled_ids_recall_rerank):
                 accelerator.backward(recall_total_loss)
 
-            del loss_ppl
-            del language_logits
-            del language_targets
-            del loss_recall
-            del recall_logits
-            del recall_targets
+            del loss_ppl, language_logits, language_targets, loss_recall, recall_logits, recall_targets
             gc.collect()
 
             # rerank
@@ -378,7 +372,7 @@ def validate_one_iteration(batch, tokenizer, model, criterions, accelerator, arg
     turn_nums, n_points, n_rec = [], 0, 0 # metadata
     ppl_losses, ppls = [], [] # response
     recall_losses, n_recall_success, recall_top100, recall_top300, recall_top500 = [], 0, [], [], [] # recall
-    rerank_losses, total_rerank_top1, rerank_top1, rerank_top10, rerank_top50 = [], [] * (len(no_rec_idx) + len(has_rec_idx)), [], [], []  # re-ranking
+    rerank_losses, total_rerank_top1, rerank_top1, rerank_top10, rerank_top50 = [], [0] * (len(no_rec_idx) + len(has_rec_idx)), [], [], []  # re-ranking
     gt_ids, gt_ranks, total_predicted_ids = [], [], [-1] * (len(no_rec_idx) + len(has_rec_idx))  # recommendation
 
     embeds = []
@@ -389,7 +383,7 @@ def validate_one_iteration(batch, tokenizer, model, criterions, accelerator, arg
                 embeds_i_j = accelerator.unwrap_model(model).language_model.transformer.wte(batch["context_with_utterances"][i, j])
             else:
                 item_id = args.pseudo_tokens_to_item_ids[batch["context_with_utterances"][i, j].item()]
-                embeds_i_j = accelerator.unwrap_model(model).compute_encoded_embeddings_for_items([item_id])[0]
+                embeds_i_j = accelerator.unwrap_model(model).compute_encoded_embeddings_for_items([item_id], args.items_db)[0]
                 embeds_i_j = accelerator.unwrap_model(model).rerank_item_wte_mapper(embeds_i_j)
             if j < batch["context_lengths"][i]:
                 embeds_context_i.append(embeds_i_j.unsqueeze(0))
@@ -407,7 +401,7 @@ def validate_one_iteration(batch, tokenizer, model, criterions, accelerator, arg
     # language only
     if len(no_rec_idx) > 0:
         language_targets = batch["context_with_utterances"][no_rec_idx][:, 1:].contiguous()
-        language_targets[language_targets == len(tokenizer)] = 0
+        language_targets[language_targets >= len(tokenizer)] = 0
         language_logits = accelerator.unwrap_model(model).forward_pure_language_turn(embeds_no_rec)
 
         language_targets_mask = torch.zeros_like(language_targets).float()
@@ -415,7 +409,6 @@ def validate_one_iteration(batch, tokenizer, model, criterions, accelerator, arg
             context_length = batch["context_lengths"][no_rec_idx[i]]
             utterance_length = batch["utterance_lengths"][no_rec_idx[i]]
             language_targets_mask[i, context_length:(context_length+utterance_length-1)] = 1
-
         loss_ppl_batch = criterion_language(language_logits, language_targets, language_targets_mask, label_smoothing=-1, reduce="sentence")
         loss_ppl = loss_ppl_batch.mean()
         ppl_losses.append(loss_ppl.item())
@@ -453,7 +446,7 @@ def validate_one_iteration(batch, tokenizer, model, criterions, accelerator, arg
             context_length = batch["context_lengths"][has_rec_idx[i]]
             utterance_length = batch["utterance_lengths"][has_rec_idx[i]]
             language_targets_mask[i, (context_length-1):(context_length+utterance_length)] = 1
-        language_targets[language_targets == len(tokenizer)] = 0
+        language_targets[language_targets >= len(tokenizer)] = 0
         loss_ppl_batch = criterion_language(language_logits, language_targets, language_targets_mask, label_smoothing=-1, reduce="sentence")
         loss_ppl = loss_ppl_batch.mean()
         ppl_losses.append(loss_ppl.item())
@@ -546,10 +539,10 @@ def validate_language_metrics_batch_embeds(tokenizer, batch, model, accelerator,
             sources.append(source)
             embeds_i = []
             for j in range(batch["contexts_padded_left"][not_repeated_idx].shape[1]):
-                if batch["contexts_padded_left"][not_repeated_idx[i, j]].item() == tokenizer.pad_token_id:
+                if batch["contexts_padded_left"][not_repeated_idx][i, j].item() == tokenizer.pad_token_id:
                     continue
-                if batch["contexts_padded_left"][not_repeated_idx[i, j]].item() < len(tokenizer):
-                    embeds_i_j = accelerator.unwrap_model(model).language_model.transformer.wte(batch["contexts_padded_left"][not_repeated_idx[i, j]])
+                if batch["contexts_padded_left"][not_repeated_idx][i, j].item() < len(tokenizer):
+                    embeds_i_j = accelerator.unwrap_model(model).language_model.transformer.wte(batch["contexts_padded_left"][not_repeated_idx][i, j])
                     embeds_i.append(embeds_i_j.unsqueeze(0))
                 else:
                     pred = args.pseudo_tokens_to_item_ids[batch["contexts_padded_left"][not_repeated_idx][i, j].item()]

@@ -96,7 +96,7 @@ class MovieRecDataset(Dataset):
                         past_tokens = torch.cat((past_tokens, utt_tokens))
                     else:
                         ids = torch.tensor([self.args.item_ids_to_pseudo_tokens[x] for x in gt_ind])
-                        raw_past_tokens = torch.cat((raw_past_tokens, ids, raw_utt_tokens))
+                        raw_past_tokens = torch.cat((raw_past_tokens, raw_utt_tokens))
                         combined_tokens = torch.cat((utt_tokens, self.SEP_token, ids, self.SEP_token), dim=0)
                         past_tokens = torch.cat((past_tokens, combined_tokens))
 
@@ -133,11 +133,10 @@ class MovieRecDataset(Dataset):
                             targets.append(recommended_id)
                             past_recommended_ids_j = copy.deepcopy(past_recommended_ids)
                             previous_ids.append(past_recommended_ids_j)
-                            ids = torch.tensor([self.args.item_ids_to_pseudo_tokens[x] for x in gt_ind])
-                            raw_past_tokens = torch.cat((raw_past_tokens, ids, raw_utt_tokens))
-                            combined_tokens = torch.cat((self.REC_token, ids, self.REC_END_token))
-                            past_tokens = torch.cat((past_tokens, combined_tokens))
-
+                        ids = torch.tensor([self.args.item_ids_to_pseudo_tokens[x] for x in gt_ind])
+                        raw_past_tokens = torch.cat((raw_past_tokens, raw_utt_tokens))
+                        combined_tokens = torch.cat((self.REC_token, ids, self.REC_END_token))
+                        past_tokens = torch.cat((past_tokens, combined_tokens))
                         past_tokens = torch.cat((past_tokens, utt_tokens))
                         for x in gt_ind:
                             if x not in past_recommended_ids:
