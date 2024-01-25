@@ -1,3 +1,6 @@
+# Source code for the PECRS model (EACL 2024)
+# Parts of the code are taken from the MESE source code: https://github.com/by2299/mese
+
 import argparse
 import torch
 import numpy as np
@@ -36,7 +39,7 @@ parser.add_argument("--root", type=str, default=root)
 parser.add_argument("--dataset_name", type=str, default="REDIAL", choices=["REDIAL", "INSPIRED"])
 
 # model
-parser.add_argument("--decoder", type=str, default="../hf_models/gpt2-small")
+parser.add_argument("--decoder", type=str, default="../hf_models/gpt2-small") # todo: place the HuggingFace checkpoint there
 parser.add_argument("--rec_token", type=str, default="[REC]")
 parser.add_argument("--rec_end_token", type=str, default="[REC_END]")
 parser.add_argument("--sep_token", type=str, default="[SEP]")
@@ -60,15 +63,13 @@ parser.add_argument("--task_type", type=str, default="CAUSAL_LM", help="task typ
 
 # optimization
 ### standard optimization
-parser.add_argument("--num_epochs", type=int, default=20)
+parser.add_argument("--num_epochs", type=int, default=10)
 parser.add_argument("--train_bs", type=int, default=8)
 parser.add_argument("--eval_bs", type=int, default=8)
 parser.add_argument("--num_gradients_accumulation", type=int, default=1)
 parser.add_argument("--num_samples_recall_train", type=int, default=150) # 150
 parser.add_argument("--num_samples_rerank_train", type=int, default=150) # 150
-parser.add_argument("--validation_recall_size", type=int, default=700) # Not expended:
-parser.add_argument("--expanded_reranking", type=bool, default=False)
-parser.add_argument("--validation_rerank_block_size", type=int, default=500)
+parser.add_argument("--validation_recall_size", type=int, default=700) # 700
 parser.add_argument("--temperature", type=float, default=1.2)
 parser.add_argument("--language_loss_train_coeff", type=float, default=0.15) # 0.15
 parser.add_argument("--language_loss_train_coeff_beginning_turn", type=float, default=1.0) # 1.0
@@ -88,12 +89,11 @@ parser.add_argument("--validate", type=bool, default=True)
 parser.add_argument("--epoch_0", type=bool, default=True)
 parser.add_argument("--print_every", type=int, default=100)
 parser.add_argument("--eval_every", type=int, default=45000)
-parser.add_argument("--show_weights_diff", type=bool, default=False)
 parser.add_argument("--generate", type=bool, default=True)
-parser.add_argument("--find_examples", type=bool, default=False)
 
 # generation
-parser.add_argument("--generation_method", type=str, default="top_k_sampling", choices=["beam_search", "diverse_beam_search", "top_k_sampling"])
+parser.add_argument("--generation_method", type=str, default="top_k_sampling",
+                    choices=["beam_search", "diverse_beam_search", "top_k_sampling"])
 parser.add_argument("--num_beams", type=int, default=2)
 ### top-k sampling
 parser.add_argument("--top_k", type=int, default=50)
@@ -129,11 +129,16 @@ test_paths = [
     root+f"data/{args.dataset_name}/test_data_processed" # size: 99 -> 993
 ]
 remove_unused_items = [False, True]
+num_epochs = [10, 20] # more gains can be achieved if training longer
+train_bs = [8, 2]
+
 args.train_path = train_paths[index]
 args.test_path = test_paths[index]
 args.items_db_path = root+f"data/{args.dataset_name}/movie_db"
 args.test_split = args.test_path.split("/")[-1].split("_")[0]
 args.remove_unused_items = remove_unused_items[index]
+args.num_epochs = num_epochs[index]
+args.train_bs = train_bs[index]
 
 
 def main(args):
@@ -291,7 +296,7 @@ def main(args):
             block_size = 32
             n_blocks = int(1024 / block_size)
             for n in range(n_blocks):
-                mean_weight = accelerator.unwrap_model(model).state_dict()["weights"][(n * block_size):((n + 1) * block_size)].mean()
+                mean_weight = accelerator.unwrap_model(model).state_dict()["weights"][(n*block_size):((n+1)*block_size)].mean()
                 logger.info(f"Block of features {n}, mean weight: {mean_weight:.4f}")
 
     # loss functions
@@ -321,7 +326,8 @@ def main(args):
             logger.info(f"# Linear warmup steps: {num_warmup_steps}")
             scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_train_optimization_steps)
 
-        train_dataloader, test_dataloader, model, optimizer, scheduler = accelerator.prepare(train_dataloader, test_dataloader, model, optimizer, scheduler)
+        train_dataloader, test_dataloader, model, optimizer, scheduler = accelerator.prepare(
+            train_dataloader, test_dataloader, model, optimizer, scheduler)
         model = model.to(accelerator.device)
 
         logger.info("Single-GPU training...")

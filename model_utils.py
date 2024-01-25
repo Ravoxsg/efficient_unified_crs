@@ -1,3 +1,5 @@
+# Credits go to the MESE source code: https://github.com/by2299/MESE/blob/main/InductiveAttentionModels.py
+
 import math
 import torch
 import torch.nn as nn

@@ -222,42 +222,42 @@ class MovieRecDataCollator:
             # context + utterance packed together (for language modeling)
             context_with_utterance = torch.cat((x["context"], x["utterance"]))
             if len(context_with_utterance) < (max_context_length + max_utterance_length):
-                extra_tokens = [self.tokenizer.pad_token_id] * ((max_context_length + max_utterance_length) - len(context_with_utterance))
+                extra_tokens = [self.tokenizer.pad_token_id]*((max_context_length+max_utterance_length)-len(context_with_utterance))
                 extra_tokens = torch.tensor(extra_tokens)
                 context_with_utterance = torch.cat([context_with_utterance, extra_tokens])
             context_with_utterances.append(context_with_utterance.unsqueeze(0))
 
             # raw context
             if len(x["raw_context"]) < max_raw_context_length:
-                extra_tokens = [self.tokenizer.pad_token_id] * (max_raw_context_length - len(x["raw_context"]))
+                extra_tokens = [self.tokenizer.pad_token_id]*(max_raw_context_length-len(x["raw_context"]))
                 extra_tokens = torch.tensor(extra_tokens)
                 x["raw_context"] = torch.cat([x["raw_context"], extra_tokens])
             raw_contexts.append(x["raw_context"].unsqueeze(0))
 
             # context
             if len(x["context"]) < max_context_length:
-                extra_tokens = [self.tokenizer.pad_token_id] * (max_context_length - len(x["context"]))
+                extra_tokens = [self.tokenizer.pad_token_id]*(max_context_length-len(x["context"]))
                 extra_tokens = torch.tensor(extra_tokens)
                 x["context"] = torch.cat([x["context"], extra_tokens])
             contexts.append(x["context"].unsqueeze(0))
 
             # context padded left (for generation)
             if len(x["context"]) < max_context_length:
-                extra_tokens = [self.tokenizer.pad_token_id] * (max_context_length - len(x["context"]))
+                extra_tokens = [self.tokenizer.pad_token_id]*(max_context_length-len(x["context"]))
                 extra_tokens = torch.tensor(extra_tokens)
                 x["context"] = torch.cat([extra_tokens, x["context"]])
             contexts_padded_left.append(x["context"].unsqueeze(0))
 
             # raw utterance
             if len(x["raw_utterance"]) < max_raw_utterance_length:
-                extra_tokens = [self.tokenizer.pad_token_id] * (max_raw_utterance_length - len(x["raw_utterance"]))
+                extra_tokens = [self.tokenizer.pad_token_id]*(max_raw_utterance_length-len(x["raw_utterance"]))
                 extra_tokens = torch.tensor(extra_tokens)
                 x["raw_utterance"] = torch.cat([x["raw_utterance"], extra_tokens])
             raw_utterances.append(x["raw_utterance"].unsqueeze(0))
 
             # utterance
             if len(x["utterance"]) < max_utterance_length:
-                extra_tokens = [self.tokenizer.pad_token_id] * (max_utterance_length - len(x["utterance"]))
+                extra_tokens = [self.tokenizer.pad_token_id]*(max_utterance_length-len(x["utterance"]))
                 extra_tokens = torch.tensor(extra_tokens)
                 x["utterance"] = torch.cat([x["utterance"], extra_tokens])
             utterances.append(x["utterance"].unsqueeze(0))

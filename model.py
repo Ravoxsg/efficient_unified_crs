@@ -127,7 +127,8 @@ class PECRSModel(torch.nn.Module):
         num_chunks = math.ceil(len(all_item_ids) / chunk_size)
         for i in tqdm(range(num_chunks)):
             chunk_ids = all_item_ids[i * chunk_size: (i + 1) * chunk_size]
-            chunk_pooled = self.compute_encoded_embeddings_for_items(chunk_ids, items_db_to_use, chunk_size=self.args.train_item_encoding_chunk_size)
+            chunk_pooled = self.compute_encoded_embeddings_for_items(
+                chunk_ids, items_db_to_use, chunk_size=self.args.train_item_encoding_chunk_size)
             chunk_pooled = chunk_pooled.cpu().detach().numpy()
             total_pooled.append(chunk_pooled)
         total_pooled = np.concatenate(total_pooled, axis=0)
@@ -147,7 +148,8 @@ class PECRSModel(torch.nn.Module):
         num_chunks = math.ceil(len(all_item_ids) / chunk_size)
         for i in tqdm(range(num_chunks)):
             chunk_ids = all_item_ids[i * chunk_size: (i + 1) * chunk_size]
-            chunk_pooled = self.compute_encoded_embeddings_for_items(chunk_ids, items_db_to_use, chunk_size=self.args.train_item_encoding_chunk_size)
+            chunk_pooled = self.compute_encoded_embeddings_for_items(
+                chunk_ids, items_db_to_use, chunk_size=self.args.train_item_encoding_chunk_size)
             chunk_pooled = chunk_pooled.cpu().detach().numpy()
             total_pooled.append(chunk_pooled)
         total_pooled = np.concatenate(total_pooled, axis=0)
@@ -165,13 +167,13 @@ class PECRSModel(torch.nn.Module):
     def trim_lm_wtes(self, wtes):
         trimmed_wtes = wtes
         if trimmed_wtes.shape[1] > self.language_model.config.n_positions:
-            trimmed_wtes = trimmed_wtes[:, :-self.language_model.config.n_positions + self.args.lm_trim_offset, :]
+            trimmed_wtes = trimmed_wtes[:, -self.language_model.config.n_positions + self.args.lm_trim_offset:, :]
         return trimmed_wtes
 
     def trim_positional_ids(self, p_ids, num_items_wtes):
         trimmed_ids = p_ids
         if trimmed_ids.shape[1] > self.language_model.config.n_positions:
-            past_ids = trimmed_ids[:,:self.language_model.config.n_positions - self.args.lm_trim_offset - num_items_wtes]
+            past_ids = trimmed_ids[:,:(self.language_model.config.n_positions - self.args.lm_trim_offset - num_items_wtes)]
             item_ids = trimmed_ids[:,-num_items_wtes:]
             trimmed_ids = torch.cat((past_ids, item_ids), dim=1)
 
@@ -207,7 +209,8 @@ class PECRSModel(torch.nn.Module):
         REC_targets = self.tokenizer(self.args.rec_token, return_tensors="pt")['input_ids'].to(self.device)
         bs = len(indices)
 
-        gt_items_wte = self.compute_encoded_embeddings_for_items(targets, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
+        gt_items_wte = self.compute_encoded_embeddings_for_items(
+            targets, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
         gt_items_wte = self.rerank_item_wte_mapper(gt_items_wte)
 
         embeds = []
@@ -235,7 +238,8 @@ class PECRSModel(torch.nn.Module):
             previous_ids = None
             if self.args.previous_recommended_ids_negative:
                 previous_ids = previous_recommended_ids[i]
-            sampled_item_ids = sample_ids_from_db(targets[i], num_samples, self.args, previous_recommended_ids=previous_ids)
+            sampled_item_ids = sample_ids_from_db(
+                targets[i], num_samples, self.args, previous_recommended_ids=previous_ids)
             all_sampled_item_ids += sampled_item_ids
             gt_item_id_index = sampled_item_ids.index(targets[i])
             all_gt_item_id_indices.append(gt_item_id_index)
@@ -255,8 +259,9 @@ class PECRSModel(torch.nn.Module):
                     n_extra = (num_samples-1-min_n_previous) - len(neg_ids)
                     neg_ids = neg_ids + neg_ids[:n_extra]
                 all_sampled_item_ids = neg_ids + pos_ids
-                short_encoded_items_embeddings = self.compute_encoded_embeddings_for_items(all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
-                encoded_items_embeddings = torch.zeros((bs * num_samples, short_encoded_items_embeddings.shape[-1]), dtype=torch.float, device=self.device)
+                short_encoded_items_embeddings = self.compute_encoded_embeddings_for_items(
+                    all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
+                encoded_items_embeddings = torch.zeros((bs*num_samples, short_encoded_items_embeddings.shape[-1]), dtype=torch.float, device=self.device)
                 begin_pos = num_samples-1-min_n_previous
                 for i in range(bs):
                     begin = i*num_samples
@@ -273,7 +278,8 @@ class PECRSModel(torch.nn.Module):
                 neg_ids = [neg_ids[x] for x in p]
                 neg_ids = neg_ids[:(num_samples-1)]
                 all_sampled_item_ids = neg_ids + pos_ids
-                short_encoded_items_embeddings = self.compute_encoded_embeddings_for_items(all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
+                short_encoded_items_embeddings = self.compute_encoded_embeddings_for_items(
+                    all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
                 encoded_items_embeddings = torch.zeros((bs*num_samples, short_encoded_items_embeddings.shape[-1]), dtype=torch.float, device=self.device)
                 for i in range(bs):
                     begin = i*num_samples
@@ -281,7 +287,8 @@ class PECRSModel(torch.nn.Module):
                     encoded_items_embeddings[begin:(end-1), :] = short_encoded_items_embeddings[:(num_samples-1), :]
                     encoded_items_embeddings[(end-1), :] = short_encoded_items_embeddings[num_samples-1+i, :]
         else:
-            encoded_items_embeddings = self.compute_encoded_embeddings_for_items(all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
+            encoded_items_embeddings = self.compute_encoded_embeddings_for_items(
+                all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
         # to compute dot product with rec_query_vector
         items_key_vectors = self.recall_item_wte_mapper(encoded_items_embeddings)
         items_key_vectors = items_key_vectors.reshape((bs, num_samples, items_key_vectors.shape[-1]))
@@ -321,11 +328,13 @@ class PECRSModel(torch.nn.Module):
             all_sampled_item_ids, all_gt_item_id_indices = [], []
             for i in range(context_tokens.shape[0]):
                 # sample num_samples item ids to train recall with "recommendation as classification"
-                sampled_item_ids = sample_ids_from_db(targets[i], num_samples, self.args, previous_recommended_ids=previous_recommended_ids)
+                sampled_item_ids = sample_ids_from_db(
+                    targets[i], num_samples, self.args, previous_recommended_ids=previous_recommended_ids)
                 all_sampled_item_ids += sampled_item_ids
                 gt_item_id_index = sampled_item_ids.index(targets[i])
                 all_gt_item_id_indices.append(gt_item_id_index)
-            encoded_items_embeddings = self.compute_encoded_embeddings_for_items(all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
+            encoded_items_embeddings = self.compute_encoded_embeddings_for_items(
+                all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
         else:
             all_gt_item_id_indices = [num_samples-1] * len(indices)
         items_wtes = self.rerank_item_wte_mapper(encoded_items_embeddings)
@@ -346,7 +355,8 @@ class PECRSModel(torch.nn.Module):
                     embeds_i_j = self.language_model.transformer.wte(context_tokens[i, j])
                 else:
                     item_id = self.args.pseudo_tokens_to_item_ids[context_tokens[i, j].item()]
-                    embeds_i_j = self.compute_encoded_embeddings_for_items([item_id], self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)[0]
+                    embeds_i_j = self.compute_encoded_embeddings_for_items(
+                        [item_id], self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)[0]
                     embeds_i_j = self.rerank_item_wte_mapper(embeds_i_j)
                 embeds_i.append(embeds_i_j.unsqueeze(0))
                 if j == past_length - 1:
@@ -393,7 +403,8 @@ class PECRSModel(torch.nn.Module):
                     embeds_i_j = self.language_model.transformer.wte(context_tokens[i, j])
                 else:
                     item_id = self.args.pseudo_tokens_to_item_ids[context_tokens[i, j].item()]
-                    embeds_i_j = self.compute_encoded_embeddings_for_items([item_id], self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)[0]
+                    embeds_i_j = self.compute_encoded_embeddings_for_items(
+                        [item_id], self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)[0]
                     embeds_i_j = self.rerank_item_wte_mapper(embeds_i_j)
                 embeds_i.append(embeds_i_j.unsqueeze(0))
                 if j == past_length-1:
@@ -443,7 +454,8 @@ class PECRSModel(torch.nn.Module):
                     embeds_i_j = self.language_model.transformer.wte(context_tokens[i, j])
                 else:
                     item_id = self.args.pseudo_tokens_to_item_ids[context_tokens[i, j].item()]
-                    embeds_i_j = self.compute_encoded_embeddings_for_items([item_id], self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)[0]
+                    embeds_i_j = self.compute_encoded_embeddings_for_items(
+                        [item_id], self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)[0]
                     embeds_i_j = self.rerank_item_wte_mapper(embeds_i_j)
                 embeds_i.append(embeds_i_j.unsqueeze(0))
                 if j == past_length-1:
