@@ -60,7 +60,6 @@ parser.add_argument("--task_type", type=str, default="CAUSAL_LM", help="task typ
 
 # optimization
 ### standard optimization
-parser.add_argument("--continue_training", type=bool, default=False)
 parser.add_argument("--num_epochs", type=int, default=20)
 parser.add_argument("--train_bs", type=int, default=8)
 parser.add_argument("--eval_bs", type=int, default=8)

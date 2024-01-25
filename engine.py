@@ -22,19 +22,9 @@ def training_loop(train_dataloader, test_dataloader, tokenizer, model, optimizer
 
     ppls, all_loss_ppl, all_loss_recall, all_loss_rerank = [], [], [], []
     times, times_embeds, times_language, times_recall, times_rerank = [], [], [], [], []
-    lm_layer_name = "language_model.transformer.h.11.mlp.c_fc.weight"
-    if args.use_lora:
-        lm_layer_name = "language_model.base_model.model.transformer.h.11.mlp.c_fc.weight"
-    lm_weights = copy.deepcopy(accelerator.unwrap_model(model).state_dict()[lm_layer_name])
     for ep in range(1, args.num_epochs + 1):
         if args.previous_recommended_ids_negative:
             args.previous_count = []
-        if args.continue_training:
-            if ep < args.continue_training_epoch:
-                for batch in tqdm.tqdm(train_dataloader, disable=not accelerator.is_main_process):
-                    with accelerator.accumulate(model):
-                        scheduler.step()
-                continue
         # training round of the epoch
         logger.info("\n")
         logger.info(f"Training epoch {ep}...")
@@ -72,12 +62,6 @@ def training_loop(train_dataloader, test_dataloader, tokenizer, model, optimizer
                     # update for gradient accumulation
                     optim_count += 1
                     lr = optimizer.param_groups[0]['lr']
-                    if args.show_weights_diff:
-                        lm_diff = (accelerator.unwrap_model(model).state_dict()[lm_layer_name] -
-                                   lm_weights) / lm_weights
-                        lm_diff = lm_diff.mean()
-                        logger.info(f"LM weights diff: {lm_diff:.8f}")
-                        lm_weights = copy.deepcopy(accelerator.unwrap_model(model).state_dict()[lm_layer_name])
 
                 if (update_count % args.print_every == 0):
                     median_ppl = np.percentile(np.array(ppls), 50)
