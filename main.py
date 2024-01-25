@@ -30,7 +30,7 @@ root = "/data/mathieu/efficient_unified_crs/" # todo: change to your home direct
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--cuda", type=bool, default=True)
 parser.add_argument("--mode", type=str, default="train", choices=["train", "eval"])
-parser.add_argument("--debug", type=bool, default=True)
+parser.add_argument("--debug", type=bool, default=False)
 parser.add_argument("--debug_size", type=int, default=10)
 parser.add_argument("--max_val_size", type=int, default=10000)
 parser.add_argument("--root", type=str, default=root)
