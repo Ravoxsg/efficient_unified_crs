@@ -208,8 +208,7 @@ def main(args):
 
     # extra tokens:
     args.n_original_tokens = len(tokenizer)
-    tokenizer.add_tokens([args.rec_token, args.rec_end_token, args.sep_token, args.
-    placeholder_token])
+    tokenizer.add_tokens([args.rec_token, args.rec_end_token, args.sep_token, args.placeholder_token])
     gpt2_special_tokens_dict = {
         'pad_token': '<pad>'
     }
@@ -289,8 +288,7 @@ def main(args):
     # datasets and data loaders
     data_collator = MovieRecDataCollator(tokenizer=tokenizer)
     train_dataset = MovieRecDataset("train", torch.load(args.train_path), tokenizer, logger, args)
-    train_dataloader = DataLoader(dataset=train_dataset, shuffle=True, batch_size=args.train_bs,
-    collate_fn=data_collator)
+    train_dataloader = DataLoader(dataset=train_dataset, shuffle=True, batch_size=args.train_bs, collate_fn=data_collator)
     test_dataset = MovieRecDataset("test", torch.load(args.test_path), tokenizer, logger, args)
     test_dataloader = DataLoader(dataset=test_dataset, shuffle=False, batch_size=args.eval_bs, collate_fn=data_collator)
 
