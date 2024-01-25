@@ -125,10 +125,10 @@ def train_one_iteration(batch, tokenizer, model, criterions, accelerator, args):
             language_logits = accelerator.unwrap_model(model).forward_pure_language_turn(embeds_no_rec)
             language_targets_mask = torch.zeros_like(language_targets).float()
             for i in range(batch["context_with_utterances"][no_rec_idx].shape[0]):
-                context_length = batch["context_lengths"][no_rec_idx][i]
-                utterance_length = batch["utterance_lengths"][no_rec_idx][i]
-                language_targets_mask[i, context_length:(context_length + utterance_length - 1)] = 1
-            loss_ppl = criterion_language(language_logits, language_targets, language_targets_mask, label_smoothing=args.label_smoothing, reduce='batch')
+                context_length = batch["context_lengths"][no_rec_idx[i]]
+                utterance_length = batch["utterance_lengths"][no_rec_idx[i]]
+                language_targets_mask[i, context_length:(context_length+utterance_length-1)] = 1
+            loss_ppl = criterion_language(language_logits, language_targets, language_targets_mask, label_smoothing=args.ls, reduce='batch')
             perplexity = np.exp(min(300, torch.nan_to_num(loss_ppl).item()))
             ppl_history.append(perplexity)
             all_loss_ppl.append(loss_ppl.item())
@@ -162,10 +162,11 @@ def train_one_iteration(batch, tokenizer, model, criterions, accelerator, args):
             # language loss in recall turn, REC_TOKEN, Language on conditional generation
             language_targets_mask = torch.zeros_like(language_targets).float()
             for i in range(batch["context_with_utterances"][has_rec_idx].shape[0]):
-                context_length = batch["context_lengths"][has_rec_idx][i]
-                utterance_length = batch["utterance_lengths"][has_rec_idx][i]
-                language_targets_mask[i, (context_length - 1):(context_length - 1 + utterance_length)] = 1
+                context_length = batch["context_lengths"][has_rec_idx[i]]
+                utterance_length = batch["utterance_lengths"][has_rec_idx[i]]
+                language_targets_mask[i, (context_length-1):(context_length-1+utterance_length)] = 1
             language_targets[language_targets >= len(tokenizer)] = 0
+            print("before loss", language_logits.shape, language_targets.shape, language_targets_mask.shape)
             loss_ppl = criterion_language(language_logits, language_targets, language_targets_mask, label_smoothing=args.ls, reduce="batch")
             perplexity = np.exp(min(300, torch.nan_to_num(loss_ppl).item()))
             ppl_history.append(perplexity)

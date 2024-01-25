@@ -42,8 +42,12 @@ class PECRSModel(torch.nn.Module):
         self.weights = nn.Parameter(torch.ones(1024))
 
     def get_rec_token_wtes(self):
-        rec_token_input_ids = self.tokenize(self.args.rec_token, return_tensors="pt")["input_ids"].to(self.device)
+        rec_token_input_ids = self.tokenizer(self.args.rec_token, return_tensors="pt")["input_ids"].to(self.device)
         return self.language_model.transformer.wte(rec_token_input_ids)
+
+    def get_rec_end_token_wtes(self):
+        rec_end_token_input_ids = self.tokenizer(self.args.rec_end_token, return_tensors="pt")["input_ids"].to(self.device)
+        return self.language_model.transformer.wte(rec_end_token_input_ids)
 
     def item_embeddings(self, h):
         h = self.item_head_l1(h) + h
@@ -178,13 +182,11 @@ class PECRSModel(torch.nn.Module):
         embeds = []
         for i in range(len(embeds_no_rec)):
             embeds_i = torch.cat((embeds_no_rec[i][0], embeds_no_rec[i][1]))
-            print(i, embeds_no_rec[i][0].shape, embeds_i.shape)
             embeds.append(embeds_i.unsqueeze(0))
         embeds = torch.cat(embeds)
 
-        print("embeds", embeds.shape)
         lm_outputs = self.language_model(inputs_embeds=embeds)
-        train_logits = lm_outputs.logits[:, -1, :].contiguous()  # skip the last one
+        train_logits = lm_outputs.logits[:, :-1, :].contiguous()  # skip the last one
 
         return train_logits
 
@@ -212,7 +214,7 @@ class PECRSModel(torch.nn.Module):
         for i in range(len(embeds_has_rec)):
             gt_items_wte_i = gt_items_wte[i:(i + 1)]
             extra_tokens = torch.cat((REC_wtes[0], gt_items_wte_i, REC_END_wtes[0]))
-            embeds_i = torch.cat((embeds_has_rec[i][0], extra_tokens, embeds_has_rec[i][2]))
+            embeds_i = torch.cat((embeds_has_rec[i][0], extra_tokens, embeds_has_rec[i][1]))
             embeds.append(embeds_i.unsqueeze(0))
         embeds = torch.cat(embeds)
         lm_wte_inputs = self.trim_lm_wtes(embeds)  # trim for len > self.language_model.config.n_positions
@@ -263,39 +265,40 @@ class PECRSModel(torch.nn.Module):
                     end_pos = begin_pos + n_previous + 1
                     encoded_items_embeddings[begin:(end-1-n_previous), :] = short_encoded_items_embeddings[:(num_samples-1-n_previous), :]
                     encoded_items_embeddings[(end-1-n_previous):end, :] = short_encoded_items_embeddings[begin_pos:end_pos, :]
-                else:
-                    pos_ids = [all_sampled_item_ids[(num_samples-1) + i * num_samples] for i in range(len(indices))]
-                    neg_ids = [x for x in all_sampled_item_ids if not (x in pos_ids)]
-                    p = np.random.permutation(len(neg_ids))
-                    neg_ids = [neg_ids[x] for x in p]
-                    neg_ids = neg_ids[:(num_samples-1)]
-                    all_sampled_item_ids = neg_ids + pos_ids
-                    short_encoded_items_embeddings = self.compute_encoded_embeddings_for_items(all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
-                    encoded_items_embeddings = torch.zeros((bs*num_samples, short_encoded_items_embeddings.shape[-1]), dtype=torch.float, device=self.device)
-                    for i in range(bs):
-                        begin = i * num_samples
-                        end = (i + 1) * num_samples
-                        encoded_items_embeddings[begin:(end-1), :] = short_encoded_items_embeddings[:(num_samples-1), :]
-                        encoded_items_embeddings[(end-1), :] = short_encoded_items_embeddings[num_samples-1+i, :]
+                    begin_pos = end_pos
+            else:
+                pos_ids = [all_sampled_item_ids[(num_samples-1) + i * num_samples] for i in range(len(indices))]
+                neg_ids = [x for x in all_sampled_item_ids if not (x in pos_ids)]
+                p = np.random.permutation(len(neg_ids))
+                neg_ids = [neg_ids[x] for x in p]
+                neg_ids = neg_ids[:(num_samples-1)]
+                all_sampled_item_ids = neg_ids + pos_ids
+                short_encoded_items_embeddings = self.compute_encoded_embeddings_for_items(all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
+                encoded_items_embeddings = torch.zeros((bs*num_samples, short_encoded_items_embeddings.shape[-1]), dtype=torch.float, device=self.device)
+                for i in range(bs):
+                    begin = i * num_samples
+                    end = (i + 1) * num_samples
+                    encoded_items_embeddings[begin:(end-1), :] = short_encoded_items_embeddings[:(num_samples-1), :]
+                    encoded_items_embeddings[(end-1), :] = short_encoded_items_embeddings[num_samples-1+i, :]
         else:
             encoded_items_embeddings = self.compute_encoded_embeddings_for_items(all_sampled_item_ids, self.args.items_db, chunk_size=self.args.train_item_encoding_chunk_size)
-            # to compute dot product with rec_query_vector
-            items_key_vectors = self.recall_item_wte_mapper(encoded_items_embeddings)
-            items_key_vectors = items_key_vectors.reshape((bs, num_samples, items_key_vectors.shape[-1]))
-            expanded_rec_query_vector = rec_query_vector.unsqueeze(1).expand(rec_query_vector.shape[0], items_key_vectors.shape[1], rec_query_vector.shape[1])
-            recall_logits = torch.sum(expanded_rec_query_vector * items_key_vectors, dim=2)
+        # to compute dot product with rec_query_vector
+        items_key_vectors = self.recall_item_wte_mapper(encoded_items_embeddings)
+        items_key_vectors = items_key_vectors.reshape((bs, num_samples, items_key_vectors.shape[-1]))
+        expanded_rec_query_vector = rec_query_vector.unsqueeze(1).expand(rec_query_vector.shape[0], items_key_vectors.shape[1], rec_query_vector.shape[1])
+        recall_logits = torch.sum(expanded_rec_query_vector * items_key_vectors, dim=2)
 
-            # REC_TOKEN prediction and future sentence prediction
-            # hidden rep of the token that's right before REC_TOKEN
-            logits = lm_outputs.logits
-            all_logits, all_targets = [], []
-            for i in range(logits.shape[0]):
-                logits_i = logits[i]
-                logits_i = torch.cat((logits_i[:(context_lengths[i]-1), :], logits_i[(context_lengths[i]+3):-1, :]))
-                all_logits.append(logits_i.unsqueeze(0))
-                targets_i = context_with_utterances_tokens[i]
-                targets_i = torch.cat((targets_i[:(context_lengths[i]-1)], REC_targets[0], targets_i[(context_lengths[i]+1):]))
-                all_targets.append(targets_i.unsqueeze(0))
+        # REC_TOKEN prediction and future sentence prediction
+        # hidden rep of the token that's right before REC_TOKEN
+        logits = lm_outputs.logits
+        all_logits, all_targets = [], []
+        for i in range(logits.shape[0]):
+            logits_i = logits[i]
+            logits_i = torch.cat((logits_i[:(context_lengths[i]-1), :], logits_i[(context_lengths[i]+3):-1, :]))
+            all_logits.append(logits_i.unsqueeze(0))
+            targets_i = context_with_utterances_tokens[i]
+            targets_i = torch.cat((targets_i[:(context_lengths[i]-1)], REC_targets[0], targets_i[(context_lengths[i]+1):]))
+            all_targets.append(targets_i.unsqueeze(0))
         language_logits = torch.cat(all_logits)
         language_targets = torch.cat(all_targets)
 

@@ -160,7 +160,7 @@ def main(args):
     open(log_path, 'w').close()
     logger = get_logger(__name__, log_level="INFO")
     file_handler = logging.FileHandler(log_path)
-    log_format = '%(asctime)s - %{name)s - %(levelname)s - %(message)s'
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     formatter = logging.Formatter(log_format)
     file_handler.setFormatter(formatter)
     logger.logger.addHandler(file_handler)
