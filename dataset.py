@@ -19,7 +19,7 @@ class MovieRecDataset(Dataset):
             p = p[:self.args.max_val_size]
             if logger is not None:
                 logger.info(f"{split} permutation: {p[:10]}")
-            self.data = [self.data[x] for x in p]
+            #self.data = [self.data[x] for x in p]
 
         if self.args.debug:
             p = np.random.permutation(len(self.data))

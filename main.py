@@ -29,14 +29,14 @@ root = "/data/mathieu/efficient_unified_crs/" # todo: change to your home direct
 # general
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--cuda", type=bool, default=True)
-parser.add_argument("--mode", type=str, default="train", choices=["train", "eval"])
+parser.add_argument("--mode", type=str, default="eval", choices=["train", "eval"])
 parser.add_argument("--debug", type=bool, default=False)
 parser.add_argument("--debug_size", type=int, default=10)
 parser.add_argument("--max_val_size", type=int, default=10000)
 parser.add_argument("--root", type=str, default=root)
 
 # data
-parser.add_argument("--dataset_name", type=str, default="REDIAL", choices=["REDIAL", "INSPIRED"])
+parser.add_argument("--dataset_name", type=str, default="INSPIRED", choices=["REDIAL", "INSPIRED"])
 
 # model
 parser.add_argument("--decoder", type=str, default="../hf_models/gpt2-small") # todo: place the HuggingFace checkpoint there
@@ -86,8 +86,8 @@ parser.add_argument("--tie_sampled_ids_recall_rerank", type=bool, default=True)
 parser.add_argument("--mixed_precision", type=str, default="fp16", choices=["no", "fp8", "fp16", "bf16"])
 ### evaluation
 parser.add_argument("--validate", type=bool, default=True)
-parser.add_argument("--epoch_0", type=bool, default=True)
-parser.add_argument("--print_every", type=int, default=100)
+parser.add_argument("--epoch_0", type=bool, default=False)
+parser.add_argument("--print_every", type=int, default=200)
 parser.add_argument("--eval_every", type=int, default=45000)
 parser.add_argument("--generate", type=bool, default=True)
 
@@ -113,7 +113,7 @@ parser.add_argument("--no_item_head", type=bool, default=False)
 parser.add_argument("--save", type=bool, default=True)
 parser.add_argument("--exp_name", type=str, default="temp")
 # checkpoint (for args.mode == "eval" only)
-parser.add_argument("--load_model_path", type=str, default="Outputs/REDIAL/temp/CRS_Train_8.pt")
+parser.add_argument("--load_model_path", type=str, default="Outputs/REDIAL/temp/CRS_Train_5.pt")
 
 args = parser.parse_args()
 
@@ -227,7 +227,7 @@ def main(args):
                             if not(item in used_items.keys()):
                                 used_items[item] = 0
         unused_items = [x for x in items_db.keys() if not(x) in used_items.keys()]
-        logger.inf(f"There are {len(unused_items)} unused items")
+        logger.info(f"There are {len(unused_items)} unused items")
         for x in unused_items:
             del items_db[x]
         logger.info(f"Items DB now has size {len(items_db.keys())}")
@@ -336,6 +336,27 @@ def main(args):
     else:
         model, test_dataloader = accelerator.prepare(model, test_dataloader)
         model = model.to(accelerator.device)
+
+        #for batch in test_dataloader:
+        #    print(batch["raw_contexts"])
+        #    dec = tokenizer.batch_decode(batch["contexts"], skip_special_tokens=True)
+        #    print(dec)
+        #    raise Exception
+        size = 0
+        for i, batch in enumerate(test_dataloader):
+            dec = tokenizer.batch_decode(batch["contexts"], skip_special_tokens=True)
+            #print(dec)
+            #raise Exception
+            #print(i, batch["raw_contexts"].shape)
+            targets = batch["targets"]
+            print("*"*30)
+            #print(batch["raw_contexts"][0])
+            print(dec)
+            print(batch["previous_recommended_ids"])
+            #targets = targets.detach().cpu().numpy()
+            size += np.sum(targets != -1)
+        print(size)
+        raise Exception
 
         logger.info("Single-GPU inference...")
         logger.info(accelerator.device)
