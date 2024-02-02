@@ -337,27 +337,6 @@ def main(args):
         model, test_dataloader = accelerator.prepare(model, test_dataloader)
         model = model.to(accelerator.device)
 
-        #for batch in test_dataloader:
-        #    print(batch["raw_contexts"])
-        #    dec = tokenizer.batch_decode(batch["contexts"], skip_special_tokens=True)
-        #    print(dec)
-        #    raise Exception
-        size = 0
-        for i, batch in enumerate(test_dataloader):
-            dec = tokenizer.batch_decode(batch["contexts"], skip_special_tokens=True)
-            #print(dec)
-            #raise Exception
-            #print(i, batch["raw_contexts"].shape)
-            targets = batch["targets"]
-            print("*"*30)
-            #print(batch["raw_contexts"][0])
-            print(dec)
-            print(batch["previous_recommended_ids"])
-            #targets = targets.detach().cpu().numpy()
-            size += np.sum(targets != -1)
-        print(size)
-        raise Exception
-
         logger.info("Single-GPU inference...")
         logger.info(accelerator.device)
         validate(1, test_dataloader, tokenizer, model, criterions, logger, accelerator, args)
