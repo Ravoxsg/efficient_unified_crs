@@ -61,7 +61,7 @@ def training_loop(train_dataloader, test_dataloader, tokenizer, model, optimizer
                     lr = optimizer.param_groups[0]['lr']
                     logger.info(f"Epoch {ep}, Batch {update_count}, # optim steps: {optim_count}, LR: {lr:.10f}")
                     logger.info(f"median ppl: {median_ppl:.4f}, mean ppl: {mean_ppl:.4f}, loss ppl: {mean_loss_ppl: .4f}, loss recall: {mean_loss_recall: .4f}, loss_rerank: {mean_loss_rerank: .4f}")
-                ppls, all_loss_ppl, all_loss_recall, all_loss_rerank = [], [], [], []
+                    ppls, all_loss_ppl, all_loss_recall, all_loss_rerank = [], [], [], []
 
                 if (update_count % args.eval_every == 0):
                     validate(ep, test_dataloader, tokenizer, model, criterions, logger, accelerator, args)

@@ -24,7 +24,7 @@ root = "/data/mathieu/efficient_unified_crs/" # todo: change to your home direct
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--cuda", type=bool, default=True)
 parser.add_argument("--debug", type=bool, default=False)
-parser.add_argument("--debug_size", type=int, default=10)
+parser.add_argument("--debug_size", type=int, default=20)
 parser.add_argument("--dataset_name", type=str, default="INSPIRED", choices=["REDIAL", "INSPIRED"])
 parser.add_argument("--root", type=str, default=root)
 parser.add_argument('--model', type=str, default = "llama-2-7b-chat", choices=["llama-2-7b-chat", "vicuna-1.5-7b"])
@@ -152,20 +152,16 @@ def main(args):
         response = tokenizer.batch_decode(tokens[:, length:], skip_special_tokens=True)[0]
         response = "Recommender: " + response
         generated.append(response)
-        #print("*"*50)
-        #print(prompt)
-        #print("*"*20)
-        #print(response)
 
-    rec_1s, r1s, r2s, rls = [], [], [], []
+    rec_1s, rec_ids, r1s, r2s, rls = [], [], [], [], []
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeLsum'], use_stemmer=True)
     for i in range(len(generated)):
         rec = 0
         movie_id = labels[i]
         if movie_id.lower() in generated[i].lower():
             rec = 1
+            rec_ids.append(movie_id)
         rec_1s.append(rec)
-        #print(i, responses[i], movie_id)
 
         response = "\n".join(sent_tokenize(responses[i]))
         gen = "\n".join(sent_tokenize(generated[i]))
@@ -176,8 +172,8 @@ def main(args):
         r1s.append(r1)
         r2s.append(r2)
         rls.append(rl)
-    rec_1s, r1s, r2s, rls = 100 * np.array(rec_1s), np.array(r1s), np.array(r2s), np.array(rls)
-    print(f"\nRec@1: {np.mean(rec_1s):.4f} || R-1: {np.mean(r1s):.2f}, R-2: {np.mean(r2s):.2f}, R-L: {np.mean(rls):.2f}")
+    rec_1s, rec_ids, r1s, r2s, rls = 100 * np.array(rec_1s), np.array(rec_ids), np.array(r1s), np.array(r2s), np.array(rls)
+    print(f"\nRec@1: {np.mean(rec_1s):.4f} # Unique: {len(rec_ids)} || R-1: {np.mean(r1s):.2f}, R-2: {np.mean(r2s):.2f}, R-L: {np.mean(rls):.2f}")
     
 
 if __name__ == '__main__':

@@ -29,14 +29,14 @@ root = "/data/mathieu/efficient_unified_crs/" # todo: change to your home direct
 # general
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--cuda", type=bool, default=True)
-parser.add_argument("--mode", type=str, default="eval", choices=["train", "eval"])
+parser.add_argument("--mode", type=str, default="train", choices=["train", "eval"])
 parser.add_argument("--debug", type=bool, default=False)
 parser.add_argument("--debug_size", type=int, default=10)
 parser.add_argument("--max_val_size", type=int, default=10000)
 parser.add_argument("--root", type=str, default=root)
 
 # data
-parser.add_argument("--dataset_name", type=str, default="INSPIRED", choices=["REDIAL", "INSPIRED"])
+parser.add_argument("--dataset_name", type=str, default="REDIAL", choices=["REDIAL", "INSPIRED"])
 
 # model
 parser.add_argument("--decoder", type=str, default="../hf_models/gpt2-small") # todo: place the HuggingFace checkpoint there
